@@ -6,6 +6,8 @@
 //!   ids.bin        stored chunk ids, ascending (dead ones included)
 //!   vectors.bin    quantized rows in the same order
 //!   terms.bin      (term, doc_freq) counted while the segment was written
+//!   tantivy/       Tantivy index, one document per chunk
+//!   usearch.index  HNSW graph keyed by chunk id
 //! ```
 //!
 //! After seal none of these files change.
@@ -15,9 +17,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::lexical::{LexicalIndex, TantivyLexical};
 use crate::manifest::{IndexConfig, Manifest};
 use crate::prepare::PreparedText;
 use crate::store::{self, TermMap};
+use crate::vector::{self, VectorSegment};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentMeta {
@@ -54,6 +58,8 @@ pub struct Segment {
     /// Stored chunk ids, ascending.
     pub ids: Vec<u64>,
     pub terms: TermMap,
+    pub lexical: TantivyLexical,
+    pub vector: VectorSegment,
 }
 
 impl Segment {
@@ -93,7 +99,9 @@ impl Segment {
             )));
         }
         let terms = TermMap::read(&dir.join("terms.bin"))?;
-        Ok(Segment { id, dir, meta, ids, terms })
+        let lexical = TantivyLexical::open(&dir.join("tantivy"))?;
+        let vector = VectorSegment::open(&dir, meta.quantization, meta.dimension as usize)?;
+        Ok(Segment { id, dir, meta, ids, terms, lexical, vector })
     }
 }
 
@@ -156,8 +164,31 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
         num_docs: chunks.len() as u64,
         num_tokens,
     };
+    let mut lexical = TantivyLexical::create(&dir.join("tantivy"))?;
+    for chunk in chunks {
+        lexical.add(chunk)?;
+    }
+    lexical.seal()?;
+    drop(lexical);
+    let rows: Vec<(u64, &[u8])> = chunks.iter().map(|c| (c.chunk_id, c.vector.as_slice())).collect();
+    vector::write_usearch(&dir.join("usearch.index"), config.quantization, config.dimension as usize, &rows)?;
+    sync_tree(&dir)?;
+
     store::write_synced(&dir.join("segment.json"), &serde_json::to_vec_pretty(&meta)?)?;
     store::sync_dir(&dir)?;
     store::sync_dir(&root.join("segments"))?;
     Ok(dir)
+}
+
+/// Fsyncs every file under `dir` and the directories themselves.
+fn sync_tree(dir: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            sync_tree(&entry.path())?;
+        } else {
+            std::fs::File::open(entry.path())?.sync_all()?;
+        }
+    }
+    store::sync_dir(dir)
 }

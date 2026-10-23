@@ -6,11 +6,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::chunk::chunk;
-use crate::error::{Error, Result};
+use crate::embed::{Embedder, HashEmbedder};
+use crate::epoch::{ReaderGuard, Reaper};
+use crate::error::{mismatch, Error, IncompatibleField, Result};
 use crate::manifest::{check_compatible, IndexConfig, Manifest};
 use crate::prepare::{prepare, prepare_with_prefix};
+use crate::rerank::{NoopReranker, Reranker};
 use crate::segment::{self, ChunkRecord, Segment};
 use crate::store::{self, Catalog, CatalogRow, TermMap, Tombstones};
+use crate::vector::quantize;
+
+/// Texts per `embed` call during ingest.
+pub const EMBED_BATCH: usize = 32;
 
 /// The open segment seals when it reaches this many chunks.
 pub const SEAL_EVERY: usize = 100_000;
@@ -103,6 +110,7 @@ pub(crate) struct Shared {
     pub state: Mutex<Arc<Snapshot>>,
     pub next_chunk_id: AtomicU64,
     pub next_segment_id: AtomicU64,
+    pub reaper: Mutex<Reaper>,
 }
 
 impl Shared {
@@ -112,6 +120,31 @@ impl Shared {
 
     pub fn snapshot(&self) -> Arc<Snapshot> {
         self.lock().clone()
+    }
+
+    pub fn reaper(&self) -> MutexGuard<'_, Reaper> {
+        self.reaper.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Copies the current epoch and increments its refcount.
+    pub fn acquire(self: &Arc<Self>) -> ReaderGuard {
+        let state = self.lock();
+        self.reaper().acquire(state.manifest.epoch);
+        ReaderGuard { shared: self.clone(), snapshot: state.clone() }
+    }
+
+    /// Runs the reaper against the current manifest.
+    pub fn reap(&self) {
+        let current = self.snapshot().manifest.sealed_segments.clone();
+        self.reaper().poll_default(&current);
+    }
+
+    /// Queues the directories of `removed` segments under `retired_at`.
+    pub fn retire(&self, removed: &[Arc<Segment>], retired_at: u64) {
+        let mut reaper = self.reaper();
+        for segment in removed {
+            reaper.retire(segment.dir.clone(), segment.name(), retired_at);
+        }
     }
 
     pub fn allocate_segment_id(&self) -> u64 {
@@ -245,11 +278,15 @@ impl Drop for WriterLock {
 
 pub struct Index {
     pub(crate) shared: Arc<Shared>,
+    pub(crate) embedder: Arc<dyn Embedder>,
+    pub(crate) reranker: Arc<dyn Reranker>,
     /// Test hook: fail after the segment is fsynced and before the manifest rename.
     pub fail_before_rename: bool,
     /// The open segment seals at this many chunks.
     pub seal_every: usize,
-    last_report: IndexReport,
+    /// Test hook: HNSW returns nothing so the dense leg falls back to the exact scan.
+    pub testing_starve_hnsw: bool,
+    pub(crate) last_report: IndexReport,
     _lock: WriterLock,
     tempdir: Option<tempfile::TempDir>,
 }
@@ -313,6 +350,7 @@ impl Index {
             config,
             next_chunk_id: AtomicU64::new(manifest.next_chunk_id),
             next_segment_id: AtomicU64::new(manifest.next_segment_id),
+            reaper: Mutex::new(Reaper::default()),
             state: Mutex::new(Arc::new(Snapshot::new(
                 manifest,
                 Arc::new(catalog),
@@ -321,10 +359,14 @@ impl Index {
                 segments,
             ))),
         });
+        let embedder: Arc<dyn Embedder> = Arc::new(HashEmbedder::new(shared.config.dimension));
         Ok(Index {
             shared,
+            embedder,
+            reranker: Arc::new(NoopReranker),
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
+            testing_starve_hnsw: false,
             last_report: IndexReport::default(),
             _lock: lock,
             tempdir: None,
@@ -361,53 +403,184 @@ impl Index {
         &self.last_report
     }
 
+    /// Replaces the embedder. Its width is checked against the manifest on every batch.
+    pub fn set_embedder(&mut self, embedder: Box<dyn Embedder>) {
+        self.embedder = Arc::from(embedder);
+    }
+
+    pub fn set_reranker(&mut self, reranker: Box<dyn Reranker>) {
+        self.reranker = Arc::from(reranker);
+    }
+
+    /// Texts a recording embedder has received.
+    #[doc(hidden)]
+    pub fn embedder_texts(&self) -> Vec<String> {
+        self.embedder.recorded()
+    }
+
+    pub(crate) fn check_width(&self, width: usize) -> Result<()> {
+        let manifest_dimension = self.shared.config.dimension;
+        if width != manifest_dimension as usize {
+            return mismatch(IncompatibleField::Dimension, &manifest_dimension.to_string(), &width.to_string());
+        }
+        Ok(())
+    }
+
+    /// Acquires the current epoch. Its directories outlive any swap until the guard drops.
+    pub fn acquire(&self) -> ReaderGuard {
+        self.shared.acquire()
+    }
+
     /// Chunks, embeds, and seals `docs`. Seals at `seal_every` chunks and seals any remainder
     /// before returning. Each seal publishes a manifest. Does not wait for a merge.
     pub fn index_documents(&mut self, docs: &[Document]) -> Result<IndexReport> {
-        let shared = self.shared.clone();
-        let mut state = shared.lock();
+        let mut records = self.chunk_records(docs)?;
+        self.embed_records(&mut records)?;
+        self.seal_and_report(records)
+    }
+
+    /// `index_documents` with caller-supplied model output: every chunk of a document gets
+    /// that document's vector.
+    #[doc(hidden)]
+    pub fn index_documents_with_vectors(&mut self, rows: &[(Document, Vec<f32>)]) -> Result<IndexReport> {
         let mut records = Vec::new();
-        for doc in docs {
-            for span in chunk(&doc.text) {
-                let body = doc.text[span.start..span.end].to_string();
-                let prefix = None::<String>;
-                let prepared = match &prefix {
-                    Some(prefix) => prepare_with_prefix(prefix, &body),
-                    None => prepare(&body),
-                };
-                records.push(ChunkRecord {
-                    chunk_id: 0,
-                    doc_id: doc.doc_id.clone(),
-                    byte_start: span.start as u64,
-                    byte_end: span.end as u64,
-                    body,
-                    prefix,
-                    prepared,
-                    vector: Vec::new(),
-                });
+        for (doc, vector) in rows {
+            self.check_width(vector.len())?;
+            let row = quantize(self.shared.config.quantization, vector);
+            for mut record in self.chunk_records(std::slice::from_ref(doc))? {
+                record.vector = row.clone();
+                records.push(record);
             }
         }
-        let row_len = self.shared.config.dimension as usize * self.shared.config.quantization.bytes_per_component();
-        for record in &mut records {
-            record.vector = vec![0u8; row_len];
+        self.seal_and_report(records)
+    }
+
+    /// One chunk per document, without the chunker. The accuracy fixture stores sections this way.
+    pub fn index_sections(&mut self, docs: &[Document]) -> Result<IndexReport> {
+        let mut records = Vec::new();
+        for doc in docs {
+            let prefix = if doc.contextual_prefix { Some(self.contextual_prefix(doc, &doc.text)?) } else { None };
+            records.push(self.record(doc, 0, doc.text.len(), prefix));
         }
+        self.embed_records(&mut records)?;
+        self.seal_and_report(records)
+    }
+
+    pub(crate) fn seal_and_report(&mut self, records: Vec<ChunkRecord>) -> Result<IndexReport> {
+        let shared = self.shared.clone();
+        let mut state = shared.lock();
         let report = self.seal_records(&mut state, records)?;
+        drop(state);
+        self.after_publish();
+        self.schedule_merge();
         self.last_report = report.clone();
         Ok(report)
     }
 
+    /// Starts the background merger if none is running. Filled in by the merge module.
+    pub(crate) fn schedule_merge(&self) {}
+
+    /// Asks the external chat model for a chunk's contextual prefix.
+    pub(crate) fn contextual_prefix(&self, _doc: &Document, _body: &str) -> Result<String> {
+        Err(Error::Llm("no chat endpoint is configured for contextual prefixes".into()))
+    }
+
+    /// Runs after every successful write publish: retries queued deletes.
+    pub(crate) fn after_publish(&self) {
+        self.shared.reap();
+    }
+
+    fn record(&self, doc: &Document, start: usize, end: usize, prefix: Option<String>) -> ChunkRecord {
+        let body = doc.text[start..end].to_string();
+        let prepared = match &prefix {
+            Some(prefix) => prepare_with_prefix(prefix, &body),
+            None => prepare(&body),
+        };
+        ChunkRecord {
+            chunk_id: 0,
+            doc_id: doc.doc_id.clone(),
+            byte_start: start as u64,
+            byte_end: end as u64,
+            body,
+            prefix,
+            prepared,
+            vector: Vec::new(),
+        }
+    }
+
+    pub(crate) fn chunk_records(&self, docs: &[Document]) -> Result<Vec<ChunkRecord>> {
+        let mut records = Vec::new();
+        for doc in docs {
+            for span in chunk(&doc.text) {
+                let prefix = if doc.contextual_prefix {
+                    Some(self.contextual_prefix(doc, &doc.text[span.start..span.end])?)
+                } else {
+                    None
+                };
+                records.push(self.record(doc, span.start, span.end, prefix));
+            }
+        }
+        Ok(records)
+    }
+
+    /// Embeds `embed_text` in batches and stores the quantized rows.
+    pub(crate) fn embed_records(&self, records: &mut [ChunkRecord]) -> Result<()> {
+        for batch in records.chunks_mut(EMBED_BATCH) {
+            let texts: Vec<String> = batch.iter().map(|r| r.prepared.embed_text.clone()).collect();
+            let vectors = self.embedder.embed(&texts)?;
+            if vectors.len() != batch.len() {
+                return Err(Error::Embed(format!("{} vectors for {} texts", vectors.len(), batch.len())));
+            }
+            for (record, vector) in batch.iter_mut().zip(vectors) {
+                self.check_width(vector.len())?;
+                record.vector = quantize(self.shared.config.quantization, &vector);
+            }
+        }
+        Ok(())
+    }
+
     /// Allocates chunk ids and seals `records` in groups of `seal_every`, publishing after each.
-    pub(crate) fn seal_records(&self, state: &mut MutexGuard<'_, Arc<Snapshot>>, mut records: Vec<ChunkRecord>) -> Result<IndexReport> {
+    pub(crate) fn seal_records(&self, state: &mut MutexGuard<'_, Arc<Snapshot>>, records: Vec<ChunkRecord>) -> Result<IndexReport> {
+        self.seal_records_replacing(state, records, "", &[])
+    }
+
+    /// `seal_records` that also tombstones `previous` (the old chunks of `doc_id`) and drops
+    /// their catalog rows in the rename that publishes the last new segment.
+    pub(crate) fn seal_records_replacing(
+        &self,
+        state: &mut MutexGuard<'_, Arc<Snapshot>>,
+        mut records: Vec<ChunkRecord>,
+        doc_id: &str,
+        previous: &[u64],
+    ) -> Result<IndexReport> {
         let mut report = IndexReport { epoch: state.manifest.epoch, ..IndexReport::default() };
         for record in &mut records {
             record.chunk_id = self.shared.next_chunk_id.fetch_add(1, Ordering::SeqCst);
             report.chunk_ids.push(record.chunk_id);
         }
-        for group in records.chunks(self.seal_every.max(1)) {
+        let groups = records.len().div_ceil(self.seal_every.max(1));
+        if groups == 0 && !previous.is_empty() {
+            // An update to empty text only removes the old chunks.
+            let rows = state.catalog.rows.iter().filter(|row| !previous.contains(&row.chunk_id)).cloned().collect();
+            let change = Change {
+                catalog: Some(Catalog::from_rows(rows)),
+                tombstones: Some(state.tombstones.with(previous)),
+                ..Change::default()
+            };
+            let next = self.shared.publish(state, change, self.fail_before_rename)?;
+            **state = Arc::new(next);
+            report.epoch = state.manifest.epoch;
+        }
+        for (index, group) in records.chunks(self.seal_every.max(1)).enumerate() {
+            let last = index + 1 == groups;
             let id = self.shared.allocate_segment_id();
             segment::write_segment(&self.shared.root, id, &self.shared.config, group)?;
             let sealed = Arc::new(Segment::open(&self.shared.root, id, &state.manifest)?);
-            let mut rows = state.catalog.rows.clone();
+            let mut rows: Vec<CatalogRow> = if last && !previous.is_empty() {
+                state.catalog.rows.iter().filter(|row| !(row.doc_id == doc_id && previous.contains(&row.chunk_id))).cloned().collect()
+            } else {
+                state.catalog.rows.clone()
+            };
             rows.extend(group.iter().map(|record| CatalogRow {
                 doc_id: record.doc_id.clone(),
                 chunk_id: record.chunk_id,
@@ -423,6 +596,7 @@ impl Index {
                 add: vec![sealed],
                 catalog: Some(Catalog::from_rows(rows)),
                 bm25: Some((bm25, num_docs, num_tokens)),
+                tombstones: (last && !previous.is_empty()).then(|| state.tombstones.with(previous)),
                 ..Change::default()
             };
             let next = self.shared.publish(state, change, self.fail_before_rename)?;
