@@ -111,6 +111,7 @@ pub(crate) struct Shared {
     pub next_chunk_id: AtomicU64,
     pub next_segment_id: AtomicU64,
     pub reaper: Mutex<Reaper>,
+    pub merge: crate::merge::MergeControl,
 }
 
 impl Shared {
@@ -284,6 +285,12 @@ pub struct Index {
     pub fail_before_rename: bool,
     /// The open segment seals at this many chunks.
     pub seal_every: usize,
+    /// Run the background merger after writes. On by default.
+    pub auto_merge: bool,
+    /// Test hook: the merger blocks after its build and before the swap.
+    pub pause_merge_after_copy: bool,
+    /// Test hook: the next `reap_now` fails this many deletes with a sharing violation.
+    pub deleter_fail_times: u32,
     /// Test hook: HNSW returns nothing so the dense leg falls back to the exact scan.
     pub testing_starve_hnsw: bool,
     pub(crate) last_report: IndexReport,
@@ -373,6 +380,7 @@ impl Index {
             next_chunk_id: AtomicU64::new(manifest.next_chunk_id),
             next_segment_id: AtomicU64::new(manifest.next_segment_id),
             reaper: Mutex::new(Reaper::default()),
+            merge: crate::merge::MergeControl::default(),
             state: Mutex::new(Arc::new(Snapshot::new(
                 manifest,
                 Arc::new(catalog),
@@ -389,6 +397,9 @@ impl Index {
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
             testing_starve_hnsw: false,
+            auto_merge: true,
+            pause_merge_after_copy: false,
+            deleter_fail_times: 0,
             last_report: IndexReport::default(),
             _lock: lock,
             tempdir: None,
@@ -499,8 +510,6 @@ impl Index {
         Ok(report)
     }
 
-    /// Starts the background merger if none is running. Filled in by the merge module.
-    pub(crate) fn schedule_merge(&self) {}
 
     /// Asks the external chat model for a chunk's contextual prefix.
     pub(crate) fn contextual_prefix(&self, _doc: &Document, _body: &str) -> Result<String> {
@@ -628,6 +637,12 @@ impl Index {
         }
         report.warning = state.warning();
         Ok(report)
+    }
+}
+
+impl Drop for Index {
+    fn drop(&mut self) {
+        self.stop_merger();
     }
 }
 
