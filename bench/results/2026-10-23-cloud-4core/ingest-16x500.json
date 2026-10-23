@@ -1,0 +1,38 @@
+{
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 384,
+    "git_revision": "749568926b87d15036703cb7b2de5e0261e87846",
+    "model_id": "BAAI/bge-small-en-v1.5",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "rows": [
+    {
+      "auto_merge": true,
+      "chunks": 8000,
+      "chunks_per_sec": 12.00740132205218,
+      "contextual_prefix": false,
+      "docs_per_sec": 0.024014802644104362,
+      "files": 16,
+      "headline": true,
+      "merge_wall_seconds": 1.0663173670000106,
+      "seal_wall_seconds": 665.189418194,
+      "segment_count": 2
+    },
+    {
+      "auto_merge": false,
+      "chunks": 8000,
+      "chunks_per_sec": 12.514351226725507,
+      "contextual_prefix": false,
+      "docs_per_sec": 0.025028702453451016,
+      "files": 16,
+      "headline": false,
+      "merge_wall_seconds": 0.000023439000074176874,
+      "seal_wall_seconds": 639.266036388,
+      "segment_count": 16
+    }
+  ]
+}
