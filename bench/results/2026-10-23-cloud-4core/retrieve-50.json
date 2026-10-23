@@ -1,0 +1,84 @@
+{
+  "chunks": 20000,
+  "concurrent": [
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 4,
+      "p50_ms": 26.796641,
+      "p99_ms": 66.412423,
+      "qps": 146.2908027312449
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 16,
+      "p50_ms": 115.806853,
+      "p99_ms": 285.90157,
+      "qps": 136.2121942220637
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 32,
+      "p50_ms": 231.80885800000001,
+      "p99_ms": 552.702256,
+      "qps": 140.2337045816061
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 384,
+    "git_revision": "a4eb350a9f1b79e41e3617300240bd7b265b31b9",
+    "model_id": "BAAI/bge-small-en-v1.5",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "fallback_pct": {
+    "1024": 0.0,
+    "128": 0.0,
+    "256": 0.0,
+    "512": 0.0,
+    "64": 100.0,
+    "exact": 0.0
+  },
+  "rerank": false,
+  "segment_count": 50,
+  "single_flight": {
+    "fallback_pct": {
+      "1024": 0.0,
+      "128": 0.0,
+      "256": 0.0,
+      "512": 0.0,
+      "64": 100.0,
+      "exact": 0.0
+    },
+    "in_flight": 1,
+    "p50_ms": 6.63321,
+    "p99_ms": 11.268232,
+    "qps": 142.36196580094528
+  },
+  "timed": 1000,
+  "tombstone_count": 0,
+  "warmup": 200
+}
