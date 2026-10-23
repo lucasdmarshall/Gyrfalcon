@@ -96,8 +96,8 @@ fn headers(chat: &ChatConfig, stream: bool) -> Vec<(&'static str, String)> {
 pub fn complete(chat: &ChatConfig, prompt: &str) -> Result<String> {
     let url = Url::parse(&chat.endpoint)?;
     let body = serde_json::to_vec(&chat_body(chat, prompt, false))?;
-    let connection = http::send(&url, "POST", &headers(chat, false), &body)?;
-    let response = http::read_response(connection)?;
+    let sent = http::send(&url, "POST", &headers(chat, false), &body)?;
+    let response = http::read_response(sent)?;
     let status = response.status;
     let bytes = response.read_all()?;
     if !(200..300).contains(&status) {
@@ -114,7 +114,7 @@ pub fn complete(chat: &ChatConfig, prompt: &str) -> Result<String> {
 /// says anything; tokens are read from the SSE body as the caller pulls them.
 pub struct AnswerStream {
     pending: VecDeque<AnswerEvent>,
-    connection: Option<http::Connection>,
+    connection: Option<http::Sent>,
     body: Option<Box<dyn BufRead + Send>>,
     finished: bool,
     _guard: ReaderGuard,
