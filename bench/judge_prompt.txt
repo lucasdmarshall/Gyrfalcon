@@ -1,0 +1,7 @@
+You judge one answer. Reply with a single word, pass or fail.
+pass means the system answer contains the factual claim of the gold answer and adds nothing that contradicts it.
+fail means it misses that claim or contradicts it.
+
+Question: {{question}}
+Gold answer: {{gold}}
+System answer: {{system}}

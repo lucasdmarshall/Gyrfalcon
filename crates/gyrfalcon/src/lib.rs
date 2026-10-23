@@ -3,6 +3,7 @@
 //! One process owns one collection. `index_documents` seals immutable segment directories
 //! and publishes `manifest.json` by rename.
 
+mod answer;
 mod chunk;
 mod embed;
 mod epoch;
@@ -22,6 +23,7 @@ mod store;
 mod tombstone;
 mod vector;
 
+pub use answer::{complete, fill_answer_prompt, fill_judge_prompt, AnswerEvent, AnswerOptions, AnswerStream, ChatConfig, ANSWER_PROMPT, CONTEXT_K, JUDGE_PROMPT};
 pub use chunk::{chunk, chunk_with, Span};
 pub use error::{Error, IncompatibleField, Result};
 pub use index::{Document, Index, IndexReport, FAN_OUT_WARNING, SEAL_EVERY};

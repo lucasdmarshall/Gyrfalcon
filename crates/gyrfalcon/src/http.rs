@@ -125,7 +125,6 @@ pub fn send(url: &Url, method: &str, headers: &[(&str, String)], body: &[u8]) ->
 /// A response whose body is read through `body`, de-chunked when needed.
 pub struct Response {
     pub status: u16,
-    pub headers: Vec<(String, String)>,
     pub body: Box<dyn BufRead + Send>,
 }
 
@@ -169,7 +168,7 @@ pub fn read_response(connection: Connection) -> Result<Response> {
     } else {
         Box::new(reader)
     };
-    Ok(Response { status, headers, body })
+    Ok(Response { status, body })
 }
 
 struct Chunked<R> {

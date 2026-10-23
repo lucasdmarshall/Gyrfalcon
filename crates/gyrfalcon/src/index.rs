@@ -281,6 +281,7 @@ pub struct Index {
     pub(crate) shared: Arc<Shared>,
     pub(crate) embedder: Arc<dyn Embedder>,
     pub(crate) reranker: Arc<dyn Reranker>,
+    pub(crate) chat: Option<crate::answer::ChatConfig>,
     /// Test hook: fail after the segment is fsynced and before the manifest rename.
     pub fail_before_rename: bool,
     /// The open segment seals at this many chunks.
@@ -394,6 +395,7 @@ impl Index {
             shared,
             embedder,
             reranker: Arc::new(NoopReranker),
+            chat: None,
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
             testing_starve_hnsw: false,
@@ -510,11 +512,6 @@ impl Index {
         Ok(report)
     }
 
-
-    /// Asks the external chat model for a chunk's contextual prefix.
-    pub(crate) fn contextual_prefix(&self, _doc: &Document, _body: &str) -> Result<String> {
-        Err(Error::Llm("no chat endpoint is configured for contextual prefixes".into()))
-    }
 
     /// Runs after every successful write publish: retries queued deletes.
     pub(crate) fn after_publish(&self) {

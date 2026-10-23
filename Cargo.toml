@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/gyrfalcon"]
+members = ["crates/gyrfalcon", "crates/gyr-cli"]
 
 [workspace.package]
 edition = "2021"
