@@ -71,10 +71,6 @@ impl Segment {
         self.ids.binary_search(&chunk_id).is_ok()
     }
 
-    /// Row of `chunk_id` in `vectors.bin`.
-    pub fn row_of(&self, chunk_id: u64) -> Option<usize> {
-        self.ids.binary_search(&chunk_id).ok()
-    }
 
     pub fn open(root: &Path, id: u64, manifest: &Manifest) -> Result<Segment> {
         let dir = segment_dir(root, id);

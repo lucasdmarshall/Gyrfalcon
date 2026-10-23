@@ -330,6 +330,28 @@ impl Index {
         Index::from_manifest(path, manifest, lock)
     }
 
+    /// Opens with an embedding session. The session's output width must equal
+    /// `manifest.dimension`; a disagreement is `IncompatibleIndex` on `Dimension` and no
+    /// segment is mapped.
+    pub fn open_with_session<S: crate::embed::EmbedSession + 'static>(path: &Path, expected: &IndexConfig, session: S) -> Result<Index> {
+        let mut opens = 0;
+        let manifest = Index::open_counting(path, expected, &mut opens)?;
+        if session.width() != manifest.dimension as usize {
+            return mismatch(IncompatibleField::Dimension, &manifest.dimension.to_string(), &session.width().to_string());
+        }
+        let mut index = Index::open(path, expected)?;
+        index.embedder = Arc::new(crate::embed::SessionEmbedder::new(session, manifest.model_id.clone()));
+        Ok(index)
+    }
+
+    /// Opens with the ort embedder loaded from `model_dir` (`model.onnx`, `tokenizer.json`).
+    pub fn open_with_model(path: &Path, expected: &IndexConfig, model_dir: &Path) -> Result<Index> {
+        let mut opens = 0;
+        Index::open_counting(path, expected, &mut opens)?;
+        let model = crate::ort_session::OrtModel::load(model_dir)?;
+        Index::open_with_session(path, expected, model)
+    }
+
     fn from_manifest(path: &Path, manifest: Manifest, lock: WriterLock) -> Result<Index> {
         let catalog = Catalog::decode(&std::fs::read(
             path.join(format!("catalog/{}.bin", manifest.catalog_generation)),
