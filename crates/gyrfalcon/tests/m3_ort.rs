@@ -1,6 +1,7 @@
 use gyrfalcon::testing::RecordingEmbedder;
 use gyrfalcon::{
-    Document, Error, HttpEmbedder, IncompatibleField, Index, IndexConfig, RetrieveOptions, ScriptedReranker, ScriptedSession,
+    Document, Error, HttpEmbedder, IncompatibleField, Index, IndexConfig, RetrieveOptions, ScriptedReranker,
+    ScriptedSession,
 };
 
 fn sealed_one_doc() -> (Index, ScriptedReranker) {
@@ -17,7 +18,9 @@ fn sealed_one_doc() -> (Index, ScriptedReranker) {
 fn onnx_width_mismatch_is_dimension() {
     let dir = tempfile::tempdir().unwrap();
     Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
-    let err = Index::open_with_session(dir.path(), &IndexConfig::test_default(), ScriptedSession { width: 768 }).err().unwrap();
+    let err = Index::open_with_session(dir.path(), &IndexConfig::test_default(), ScriptedSession { width: 768 })
+        .err()
+        .unwrap();
     match err {
         Error::IncompatibleIndex { field, manifest_value, requested_value } => {
             assert_eq!(field, IncompatibleField::Dimension);
@@ -36,7 +39,8 @@ fn matching_session_width_opens_and_embeds() {
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     index.index_documents(&[Document::body("a", "rust safety")]).unwrap();
     drop(index);
-    let index = Index::open_with_session(dir.path(), &IndexConfig::test_default(), ScriptedSession { width: 384 }).unwrap();
+    let index =
+        Index::open_with_session(dir.path(), &IndexConfig::test_default(), ScriptedSession { width: 384 }).unwrap();
     let hits = index.retrieve("rust", RetrieveOptions { rerank: false, limit: 5 }).unwrap();
     assert_eq!(hits.chunk_ids, vec![0]);
 }
@@ -128,7 +132,9 @@ fn ort_fixture_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     index.set_embedder(Box::new(embedder));
-    index.index_documents(&[Document::body("a", "memory safety in rust"), Document::body("b", "bread cooking")]).unwrap();
+    index
+        .index_documents(&[Document::body("a", "memory safety in rust"), Document::body("b", "bread cooking")])
+        .unwrap();
     drop(index);
     let mut index = Index::open_with_model(dir.path(), &IndexConfig::test_default(), &fixture.join("embed")).unwrap();
     index.set_reranker(Box::new(gyrfalcon::OrtReranker::from_dir(&fixture.join("rerank")).unwrap()));

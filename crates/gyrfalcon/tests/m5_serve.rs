@@ -14,7 +14,11 @@ fn one_doc() -> Index {
 
 /// The fenced block that follows `marker` in the spec.
 fn spec_block(marker: &str) -> String {
-    let spec = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/superpowers/specs/2026-10-24-gyrfalcon-design.md")).unwrap();
+    let spec = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/superpowers/specs/2026-10-24-gyrfalcon-design.md"
+    ))
+    .unwrap();
     let after = &spec[spec.find(marker).unwrap()..];
     let start = after.find("```\n").unwrap() + 4;
     let end = after[start..].find("\n```").unwrap();
@@ -96,19 +100,25 @@ fn retrieve_does_not_call_the_llm() {
 fn prefix_off_embeds_the_body_only() {
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
     index.set_embedder(Box::new(RecordingEmbedder::new(384)));
-    index.index_documents(&[Document { doc_id: "a".into(), text: "Body text".into(), contextual_prefix: false }]).unwrap();
+    index
+        .index_documents(&[Document { doc_id: "a".into(), text: "Body text".into(), contextual_prefix: false }])
+        .unwrap();
     assert_eq!(index.embedder_texts(), vec!["Body text".to_string()]);
 }
 
 #[test]
 fn prefix_on_embeds_prefix_then_body_and_cites_the_body() {
     let completion = serde_json::json!({ "choices": [{ "message": { "content": " About gardening. " } }] }).to_string();
-    let (endpoint, requests) =
-        chat_server(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{completion}", completion.len()));
+    let (endpoint, requests) = chat_server(format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{completion}",
+        completion.len()
+    ));
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
     index.set_chat_endpoint(endpoint);
     index.set_embedder(Box::new(RecordingEmbedder::new(384)));
-    index.index_documents(&[Document { doc_id: "a".into(), text: "Body text".into(), contextual_prefix: true }]).unwrap();
+    index
+        .index_documents(&[Document { doc_id: "a".into(), text: "Body text".into(), contextual_prefix: true }])
+        .unwrap();
     assert_eq!(index.embedder_texts(), vec!["About gardening.\n\nBody text".to_string()]);
     let request: serde_json::Value = serde_json::from_slice(&requests.recv().unwrap()).unwrap();
     assert_eq!(request["stream"], false);
@@ -132,7 +142,8 @@ fn mismatch_is_http_409() {
 #[test]
 fn http_routes_call_the_library() {
     let server = TestServer::spawn();
-    let indexed = server.post("/v1/documents", r#"{"documents":[{"doc_id":"a","text":"rust safety"},{"doc_id":"b","text":"bread"}]}"#);
+    let indexed = server
+        .post("/v1/documents", r#"{"documents":[{"doc_id":"a","text":"rust safety"},{"doc_id":"b","text":"bread"}]}"#);
     assert_eq!(indexed.status, 200, "{}", indexed.body);
     assert_eq!(indexed.json["chunk_ids"], serde_json::json!([0, 1]));
     let retrieved = server.post("/v1/retrieve", r#"{"query":"bread","rerank":false,"limit":1}"#);
@@ -152,7 +163,16 @@ fn http_answer_streams_sse() {
     let dir = tempfile::tempdir().unwrap();
     let collection = dir.path().join("c");
     let mut child = std::process::Command::new(common::gyr_binary())
-        .args(["serve", collection.to_str().unwrap(), "--bind", "127.0.0.1:0", "--embedder", "hash", "--chat-endpoint", &endpoint])
+        .args([
+            "serve",
+            collection.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+            "--embedder",
+            "hash",
+            "--chat-endpoint",
+            &endpoint,
+        ])
         .stdout(std::process::Stdio::piped())
         .spawn()
         .unwrap();
@@ -176,7 +196,14 @@ fn gyr_index_then_query_prints_the_chunk_id() {
     std::fs::write(&fixture, "Memory safety in Rust comes from the borrow checker.").unwrap();
     let other = dir.path().join("bread.txt");
     std::fs::write(&other, "Bread needs flour, water, salt, and time.").unwrap();
-    let indexed = gyr(&["index", collection.to_str().unwrap(), fixture.to_str().unwrap(), other.to_str().unwrap(), "--embedder", "hash"]);
+    let indexed = gyr(&[
+        "index",
+        collection.to_str().unwrap(),
+        fixture.to_str().unwrap(),
+        other.to_str().unwrap(),
+        "--embedder",
+        "hash",
+    ]);
     assert!(indexed.status.success(), "{}", String::from_utf8_lossy(&indexed.stderr));
     let report: serde_json::Value = serde_json::from_slice(&indexed.stdout).unwrap();
     assert_eq!(report["chunks"], 2);
@@ -197,7 +224,9 @@ fn gyr_index_then_query_prints_the_chunk_id() {
 fn gyr_compact_all_clears_tombstones() {
     let dir = tempfile::tempdir().unwrap();
     let collection = dir.path().join("c");
-    let mut index = Index::create(&collection, &IndexConfig { model_id: "gyr-hash".into(), ..IndexConfig::test_default() }).unwrap();
+    let mut index =
+        Index::create(&collection, &IndexConfig { model_id: "gyr-hash".into(), ..IndexConfig::test_default() })
+            .unwrap();
     index.auto_merge = false;
     index.index_documents(&[Document::body("a", "one")]).unwrap();
     index.index_documents(&[Document::body("b", "two")]).unwrap();

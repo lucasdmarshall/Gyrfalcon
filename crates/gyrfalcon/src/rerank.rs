@@ -65,7 +65,9 @@ impl Reranker for ScriptedReranker {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(bodies
             .iter()
-            .map(|body| self.scores.iter().find(|(needle, _)| body.contains(needle.as_str())).map(|(_, s)| *s).unwrap_or(0.0))
+            .map(|body| {
+                self.scores.iter().find(|(needle, _)| body.contains(needle.as_str())).map(|(_, s)| *s).unwrap_or(0.0)
+            })
             .collect())
     }
 }

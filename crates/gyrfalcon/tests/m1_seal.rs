@@ -126,9 +126,7 @@ fn chunk_covers_bytes_without_splitting_utf8() {
     let mut covered = vec![false; text.len()];
     for span in &spans {
         assert!(text.is_char_boundary(span.start) && text.is_char_boundary(span.end));
-        for i in span.start..span.end {
-            covered[i] = true;
-        }
+        covered[span.start..span.end].fill(true);
     }
     assert!(covered.iter().all(|b| *b));
 }

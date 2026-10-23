@@ -120,7 +120,8 @@ impl Index {
             let lexical = scope.spawn(|| lexical_leg(snapshot, &prepared.tokens, leg_limit));
             let dense = (|| -> Result<DenseHits> {
                 let vectors = self.embedder.embed(std::slice::from_ref(&prepared.embed_text))?;
-                let vector = vectors.into_iter().next().ok_or_else(|| Error::Embed("embedder returned nothing".into()))?;
+                let vector =
+                    vectors.into_iter().next().ok_or_else(|| Error::Embed("embedder returned nothing".into()))?;
                 self.check_width(vector.len())?;
                 let mut dense_query = DenseQuery::new(snapshot.manifest.quantization, &vector);
                 dense_query.starve_hnsw = self.testing_starve_hnsw;

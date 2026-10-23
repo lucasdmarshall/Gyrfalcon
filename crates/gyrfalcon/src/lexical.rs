@@ -5,12 +5,15 @@ use std::sync::Arc;
 
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::Column;
-use tantivy::query::{BooleanQuery, Bm25StatisticsProvider, Occur, Query, TermQuery};
+use tantivy::query::{Bm25StatisticsProvider, BooleanQuery, Occur, Query, TermQuery};
 use tantivy::schema::{
     Field, IndexRecordOption, NumericOptions, Schema, TextFieldIndexing, TextOptions, Value, STORED, STRING,
 };
 use tantivy::tokenizer::{PreTokenizedString, Token as TantivyToken, TokenStream, Tokenizer};
-use tantivy::{DocAddress, DocId, IndexReader, IndexWriter, ReloadPolicy, Score, SegmentOrdinal, SegmentReader, TantivyDocument, Term};
+use tantivy::{
+    DocAddress, DocId, IndexReader, IndexWriter, ReloadPolicy, Score, SegmentOrdinal, SegmentReader, TantivyDocument,
+    Term,
+};
 
 use crate::error::{Error, Result};
 use crate::manifest::ANALYZER_ID;
@@ -143,7 +146,13 @@ impl Bm25StatisticsProvider for CollectionStats<'_> {
 /// Lexical operations the retrieve path needs. `TantivyLexical` is the v1 implementation.
 pub trait LexicalIndex {
     fn add(&mut self, chunk: &ChunkRecord) -> Result<()>;
-    fn search(&self, tokens: &[Token], limit: usize, stats: &CollectionStats, dead: &Arc<Tombstones>) -> Result<Vec<ScoredId>>;
+    fn search(
+        &self,
+        tokens: &[Token],
+        limit: usize,
+        stats: &CollectionStats,
+        dead: &Arc<Tombstones>,
+    ) -> Result<Vec<ScoredId>>;
     fn seal(&mut self) -> Result<()>;
 }
 
@@ -176,7 +185,8 @@ impl TantivyLexical {
     }
 
     fn open_reader(&mut self) -> Result<()> {
-        let reader = self.index.reader_builder().reload_policy(ReloadPolicy::Manual).try_into().map_err(lexical_error)?;
+        let reader =
+            self.index.reader_builder().reload_policy(ReloadPolicy::Manual).try_into().map_err(lexical_error)?;
         let searcher = reader.searcher();
         let mut addresses = Vec::new();
         for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
@@ -267,9 +277,8 @@ impl TantivyLexical {
             let column = segment.fast_fields().u64("chunk_id").map_err(lexical_error)?;
             let inverted = segment.inverted_index(self.fields.text).map_err(lexical_error)?;
             let term = Term::from_field_text(self.fields.text, term);
-            if let Some(mut postings) = inverted
-                .read_postings(&term, IndexRecordOption::WithFreqsAndPositions)
-                .map_err(lexical_error)?
+            if let Some(mut postings) =
+                inverted.read_postings(&term, IndexRecordOption::WithFreqsAndPositions).map_err(lexical_error)?
             {
                 while postings.doc() != tantivy::TERMINATED {
                     let mut positions = Vec::new();
@@ -307,7 +316,13 @@ impl LexicalIndex for TantivyLexical {
         Ok(())
     }
 
-    fn search(&self, tokens: &[Token], limit: usize, stats: &CollectionStats, dead: &Arc<Tombstones>) -> Result<Vec<ScoredId>> {
+    fn search(
+        &self,
+        tokens: &[Token],
+        limit: usize,
+        stats: &CollectionStats,
+        dead: &Arc<Tombstones>,
+    ) -> Result<Vec<ScoredId>> {
         if tokens.is_empty() || limit == 0 || stats.num_docs == 0 {
             return Ok(Vec::new());
         }

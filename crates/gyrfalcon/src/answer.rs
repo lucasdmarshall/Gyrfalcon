@@ -42,7 +42,9 @@ impl Default for AnswerOptions {
 #[derive(Debug)]
 pub enum AnswerEvent {
     /// Milliseconds from query start until the request bytes were written to the socket.
-    TimeToRequest { ms: f64 },
+    TimeToRequest {
+        ms: f64,
+    },
     Hit(Hit),
     Token(String),
     Done,
@@ -198,7 +200,11 @@ impl Index {
     pub fn answer(&self, query: &str, opts: AnswerOptions) -> Result<AnswerStream> {
         let started = Instant::now();
         let guard = self.acquire();
-        let chat = opts.chat.clone().or_else(|| self.chat.clone()).ok_or_else(|| Error::Llm("no chat endpoint is configured".into()))?;
+        let chat = opts
+            .chat
+            .clone()
+            .or_else(|| self.chat.clone())
+            .ok_or_else(|| Error::Llm("no chat endpoint is configured".into()))?;
         let url = Url::parse(&chat.endpoint)?;
         let hits = self.retrieve(query, RetrieveOptions { rerank: opts.rerank, limit: opts.context_k })?.hits;
         let prompt = fill_answer_prompt(query, &hits);
@@ -221,7 +227,10 @@ impl Index {
 
     /// Asks the chat model for a chunk's contextual prefix.
     pub(crate) fn contextual_prefix(&self, doc: &Document, body: &str) -> Result<String> {
-        let chat = self.chat.as_ref().ok_or_else(|| Error::Llm("no chat endpoint is configured for contextual prefixes".into()))?;
+        let chat = self
+            .chat
+            .as_ref()
+            .ok_or_else(|| Error::Llm("no chat endpoint is configured for contextual prefixes".into()))?;
         let prompt = format!(
             "<document>\n{}\n</document>\nHere is a chunk of that document:\n<chunk>\n{}\n</chunk>\nWrite one short sentence that situates this chunk within the document, to improve search retrieval of the chunk. Answer with only that sentence.",
             doc.text, body

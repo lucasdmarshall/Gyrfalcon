@@ -28,8 +28,14 @@ pub enum FallbackStep {
 }
 
 impl FallbackStep {
-    pub const ALL: [FallbackStep; 6] =
-        [FallbackStep::E64, FallbackStep::E128, FallbackStep::E256, FallbackStep::E512, FallbackStep::E1024, FallbackStep::Exact];
+    pub const ALL: [FallbackStep; 6] = [
+        FallbackStep::E64,
+        FallbackStep::E128,
+        FallbackStep::E256,
+        FallbackStep::E512,
+        FallbackStep::E1024,
+        FallbackStep::Exact,
+    ];
 
     /// The `fallback_pct` key.
     pub fn label(self) -> &'static str {
@@ -257,14 +263,20 @@ impl VectorSegment {
         out
     }
 
-    fn filtered(&self, index: &usearch::Index, query: &DenseQuery, count: usize, live: &dyn Fn(u64) -> bool) -> Result<Vec<(u64, f32)>> {
+    fn filtered(
+        &self,
+        index: &usearch::Index,
+        query: &DenseQuery,
+        count: usize,
+        live: &dyn Fn(u64) -> bool,
+    ) -> Result<Vec<(u64, f32)>> {
         if query.starve_hnsw {
             return Ok(Vec::new());
         }
         let matches = match self.quantization {
-            Quantization::I8 => index.filtered_search::<i8, _>(as_i8(&query.row), count, |key| live(key)),
-            Quantization::F16 | Quantization::F32 => index.filtered_search::<f32, _>(&query.raw, count, |key| live(key)),
-            Quantization::B1 => index.filtered_search::<b1x8, _>(&to_bits(&query.row), count, |key| live(key)),
+            Quantization::I8 => index.filtered_search::<i8, _>(as_i8(&query.row), count, live),
+            Quantization::F16 | Quantization::F32 => index.filtered_search::<f32, _>(&query.raw, count, live),
+            Quantization::B1 => index.filtered_search::<b1x8, _>(&to_bits(&query.row), count, live),
         }
         .map_err(vector_error)?;
         Ok(matches.keys.into_iter().zip(matches.distances).collect())
@@ -273,7 +285,14 @@ impl VectorSegment {
     /// Searches with `live` inside the graph walk. Retries at expansion 128..1024 while the
     /// live count is short, then scans `vectors.bin`. `ids` are the segment's stored ids in
     /// `vectors.bin` order and `live_count` is how many of them are live.
-    pub fn search(&self, query: &DenseQuery, limit: usize, live: &dyn Fn(u64) -> bool, ids: &[u64], live_count: usize) -> Result<VectorHits> {
+    pub fn search(
+        &self,
+        query: &DenseQuery,
+        limit: usize,
+        live: &dyn Fn(u64) -> bool,
+        ids: &[u64],
+        live_count: usize,
+    ) -> Result<VectorHits> {
         let want = limit.min(live_count);
         if want == 0 {
             return Ok(VectorHits { hits: Vec::new(), step: FallbackStep::E64 });
@@ -326,7 +345,13 @@ impl VectorSegment {
     }
 
     /// Reads `vectors.bin` and keeps the closest live ids by cosine distance.
-    fn exact(&self, query: &DenseQuery, count: usize, live: &dyn Fn(u64) -> bool, ids: &[u64]) -> Result<Vec<(u64, f32)>> {
+    fn exact(
+        &self,
+        query: &DenseQuery,
+        count: usize,
+        live: &dyn Fn(u64) -> bool,
+        ids: &[u64],
+    ) -> Result<Vec<(u64, f32)>> {
         let bytes = std::fs::read(&self.vectors_path)?;
         let row_len = self.dimension * self.quantization.bytes_per_component();
         let query_vector = match self.quantization {

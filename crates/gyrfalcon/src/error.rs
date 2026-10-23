@@ -30,11 +30,7 @@ impl fmt::Display for IncompatibleField {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("incompatible index: {field} is {manifest_value} in the manifest, {requested_value} requested")]
-    IncompatibleIndex {
-        field: IncompatibleField,
-        manifest_value: String,
-        requested_value: String,
-    },
+    IncompatibleIndex { field: IncompatibleField, manifest_value: String, requested_value: String },
     #[error("segment corrupt: {0}")]
     SegmentCorrupt(String),
     #[error("index not found: {}", .0.display())]

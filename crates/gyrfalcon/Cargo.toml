@@ -22,3 +22,4 @@ ort = { version = "2.0.0-rc.15", default-features = false, features = ["load-dyn
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 webpki-roots = "1"
+sha2 = "0.10"

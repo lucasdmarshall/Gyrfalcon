@@ -71,7 +71,6 @@ impl Segment {
         self.ids.binary_search(&chunk_id).is_ok()
     }
 
-
     pub fn open(root: &Path, id: u64, manifest: &Manifest) -> Result<Segment> {
         let dir = segment_dir(root, id);
         let meta: SegmentMeta = serde_json::from_slice(&std::fs::read(dir.join("segment.json"))?)?;

@@ -127,24 +127,25 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
             let inputs = state.segments.clone();
             (inputs, Kind::All, state.tombstones.clone(), shared.allocate_segment_id())
         } else {
-        let counts: Vec<(String, u64)> = state.segments.iter().map(|s| (s.name(), s.meta.chunk_count)).collect();
-        let (names, kind) = match select_tier(&counts) {
-            Some(names) => (names, Kind::Tier),
-            None => {
-                let ratios: Vec<(String, u64, u64)> = state
-                    .segments
-                    .iter()
-                    .zip(&state.live)
-                    .map(|(s, live)| (s.name(), s.meta.chunk_count, s.meta.chunk_count - live))
-                    .collect();
-                match dead_ratio_target(&ratios) {
-                    Some(name) => (vec![name], Kind::DeadRatio),
-                    None => return Ok(false),
+            let counts: Vec<(String, u64)> = state.segments.iter().map(|s| (s.name(), s.meta.chunk_count)).collect();
+            let (names, kind) = match select_tier(&counts) {
+                Some(names) => (names, Kind::Tier),
+                None => {
+                    let ratios: Vec<(String, u64, u64)> = state
+                        .segments
+                        .iter()
+                        .zip(&state.live)
+                        .map(|(s, live)| (s.name(), s.meta.chunk_count, s.meta.chunk_count - live))
+                        .collect();
+                    match dead_ratio_target(&ratios) {
+                        Some(name) => (vec![name], Kind::DeadRatio),
+                        None => return Ok(false),
+                    }
                 }
-            }
-        };
-        let inputs: Vec<Arc<Segment>> = state.segments.iter().filter(|s| names.contains(&s.name())).cloned().collect();
-        (inputs, kind, state.tombstones.clone(), shared.allocate_segment_id())
+            };
+            let inputs: Vec<Arc<Segment>> =
+                state.segments.iter().filter(|s| names.contains(&s.name())).cloned().collect();
+            (inputs, kind, state.tombstones.clone(), shared.allocate_segment_id())
         }
     };
 
@@ -292,7 +293,12 @@ impl Index {
         control.requested = true;
         if control.thread.is_none() {
             let shared = self.shared.clone();
-            control.thread = Some(std::thread::Builder::new().name("gyr-merge".into()).spawn(move || worker(shared)).expect("spawn merger"));
+            control.thread = Some(
+                std::thread::Builder::new()
+                    .name("gyr-merge".into())
+                    .spawn(move || worker(shared))
+                    .expect("spawn merger"),
+            );
         }
         self.shared.merge.changed.notify_all();
     }

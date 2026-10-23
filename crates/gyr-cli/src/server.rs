@@ -134,7 +134,9 @@ fn expected_config(app: &App, body: &Value) -> Result<IndexConfig, (u16, Value)>
 fn gate(app: &App, body: &Value) -> Result<(), (u16, Value)> {
     let expected = expected_config(app, body)?;
     let mut opens = 0;
-    Index::open_counting(&app.dir, &expected, &mut opens).map(|_| ()).map_err(|err| (err.http_status(), error_json(&err)))
+    Index::open_counting(&app.dir, &expected, &mut opens)
+        .map(|_| ())
+        .map_err(|err| (err.http_status(), error_json(&err)))
 }
 
 fn library<T>(result: Result<T, Error>) -> Result<T, (u16, Value)> {
@@ -170,10 +172,14 @@ fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Valu
         ("GET", "/health") => Ok(json!({ "status": "ok" })),
         ("POST", "/v1/documents") => {
             gate(app, body)?;
-            let documents = body.get("documents").and_then(Value::as_array).ok_or_else(|| bad_request("documents must be an array"))?;
+            let documents = body
+                .get("documents")
+                .and_then(Value::as_array)
+                .ok_or_else(|| bad_request("documents must be an array"))?;
             let mut docs = Vec::new();
             for doc in documents {
-                let doc_id = doc.get("doc_id").and_then(Value::as_str).ok_or_else(|| bad_request("doc_id is required"))?;
+                let doc_id =
+                    doc.get("doc_id").and_then(Value::as_str).ok_or_else(|| bad_request("doc_id is required"))?;
                 let text = doc.get("text").and_then(Value::as_str).ok_or_else(|| bad_request("text is required"))?;
                 let mut document = Document::body(doc_id, text);
                 document.contextual_prefix = doc.get("contextual_prefix").and_then(Value::as_bool).unwrap_or(false);
@@ -181,7 +187,9 @@ fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Valu
             }
             let mut index = app.index.write().unwrap_or_else(|p| p.into_inner());
             let report = library(index.index_documents(&docs))?;
-            Ok(json!({ "chunk_ids": report.chunk_ids, "sealed": report.sealed, "epoch": report.epoch, "warning": report.warning }))
+            Ok(
+                json!({ "chunk_ids": report.chunk_ids, "sealed": report.sealed, "epoch": report.epoch, "warning": report.warning }),
+            )
         }
         ("DELETE", path) if path.starts_with("/v1/documents/") => {
             let doc_id = percent_decode(&path["/v1/documents/".len()..]);
@@ -227,7 +235,10 @@ fn answer(app: &App, stream: &mut TcpStream, body: &Value) -> std::io::Result<()
         Err((status, value)) => return respond(stream, status, &value),
     };
     let include_prefix = body.get("include_prefix").and_then(Value::as_bool).unwrap_or(false);
-    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n")?;
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
+    )?;
     for event in events {
         let data = match &event {
             AnswerEvent::TimeToRequest { ms } => json!({ "ms": ms }),

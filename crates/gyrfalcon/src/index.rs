@@ -341,11 +341,19 @@ impl Index {
     /// Opens with an embedding session. The session's output width must equal
     /// `manifest.dimension`; a disagreement is `IncompatibleIndex` on `Dimension` and no
     /// segment is mapped.
-    pub fn open_with_session<S: crate::embed::EmbedSession + 'static>(path: &Path, expected: &IndexConfig, session: S) -> Result<Index> {
+    pub fn open_with_session<S: crate::embed::EmbedSession + 'static>(
+        path: &Path,
+        expected: &IndexConfig,
+        session: S,
+    ) -> Result<Index> {
         let mut opens = 0;
         let manifest = Index::open_counting(path, expected, &mut opens)?;
         if session.width() != manifest.dimension as usize {
-            return mismatch(IncompatibleField::Dimension, &manifest.dimension.to_string(), &session.width().to_string());
+            return mismatch(
+                IncompatibleField::Dimension,
+                &manifest.dimension.to_string(),
+                &session.width().to_string(),
+            );
         }
         let mut index = Index::open(path, expected)?;
         index.embedder = Arc::new(crate::embed::SessionEmbedder::new(session, manifest.model_id.clone()));
@@ -361,9 +369,8 @@ impl Index {
     }
 
     fn from_manifest(path: &Path, manifest: Manifest, lock: WriterLock) -> Result<Index> {
-        let catalog = Catalog::decode(&std::fs::read(
-            path.join(format!("catalog/{}.bin", manifest.catalog_generation)),
-        )?)?;
+        let catalog =
+            Catalog::decode(&std::fs::read(path.join(format!("catalog/{}.bin", manifest.catalog_generation)))?)?;
         let tombstones = Tombstones::decode(&std::fs::read(
             path.join(format!("tombstones/{}.bin", manifest.tombstone_generation)),
         )?)?;
@@ -512,7 +519,6 @@ impl Index {
         Ok(report)
     }
 
-
     /// Runs after every successful write publish: retries queued deletes.
     pub(crate) fn after_publish(&self) {
         self.shared.reap();
@@ -568,7 +574,11 @@ impl Index {
     }
 
     /// Allocates chunk ids and seals `records` in groups of `seal_every`, publishing after each.
-    pub(crate) fn seal_records(&self, state: &mut MutexGuard<'_, Arc<Snapshot>>, records: Vec<ChunkRecord>) -> Result<IndexReport> {
+    pub(crate) fn seal_records(
+        &self,
+        state: &mut MutexGuard<'_, Arc<Snapshot>>,
+        records: Vec<ChunkRecord>,
+    ) -> Result<IndexReport> {
         self.seal_records_replacing(state, records, "", &[])
     }
 
@@ -605,7 +615,13 @@ impl Index {
             segment::write_segment(&self.shared.root, id, &self.shared.config, group)?;
             let sealed = Arc::new(Segment::open(&self.shared.root, id, &state.manifest)?);
             let mut rows: Vec<CatalogRow> = if last && !previous.is_empty() {
-                state.catalog.rows.iter().filter(|row| !(row.doc_id == doc_id && previous.contains(&row.chunk_id))).cloned().collect()
+                state
+                    .catalog
+                    .rows
+                    .iter()
+                    .filter(|row| !(row.doc_id == doc_id && previous.contains(&row.chunk_id)))
+                    .cloned()
+                    .collect()
             } else {
                 state.catalog.rows.clone()
             };

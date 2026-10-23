@@ -161,13 +161,14 @@ pub fn read_response(connection: Connection) -> Result<Response> {
         }
     }
     let header = |name: &str| headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str());
-    let body: Box<dyn BufRead + Send> = if header("transfer-encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked")) {
-        Box::new(BufReader::new(Chunked { inner: reader, remaining: 0, done: false }))
-    } else if let Some(length) = header("content-length").and_then(|v| v.parse::<u64>().ok()) {
-        Box::new(BufReader::new(reader.take(length)))
-    } else {
-        Box::new(reader)
-    };
+    let body: Box<dyn BufRead + Send> =
+        if header("transfer-encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked")) {
+            Box::new(BufReader::new(Chunked { inner: reader, remaining: 0, done: false }))
+        } else if let Some(length) = header("content-length").and_then(|v| v.parse::<u64>().ok()) {
+            Box::new(BufReader::new(reader.take(length)))
+        } else {
+            Box::new(reader)
+        };
     Ok(Response { status, body })
 }
 
@@ -228,7 +229,10 @@ mod tests {
     #[test]
     fn parses_urls() {
         let url = Url::parse("http://127.0.0.1:8080/v1/chat/completions").unwrap();
-        assert_eq!((url.https, url.host.as_str(), url.port, url.path.as_str()), (false, "127.0.0.1", 8080, "/v1/chat/completions"));
+        assert_eq!(
+            (url.https, url.host.as_str(), url.port, url.path.as_str()),
+            (false, "127.0.0.1", 8080, "/v1/chat/completions")
+        );
         let url = Url::parse("https://api.example.com").unwrap();
         assert_eq!((url.https, url.port, url.path.as_str()), (true, 443, "/"));
         assert!(Url::parse("ftp://x").is_err());

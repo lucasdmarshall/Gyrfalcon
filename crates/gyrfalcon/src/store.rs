@@ -147,7 +147,7 @@ pub fn encode_ids(ids: &[u64]) -> Vec<u8> {
 }
 
 pub fn decode_ids(bytes: &[u8]) -> Result<Vec<u64>> {
-    if bytes.len() % 8 != 0 {
+    if !bytes.len().is_multiple_of(8) {
         return Err(Error::SegmentCorrupt("id array length is not a multiple of 8".into()));
     }
     Ok(bytes.chunks_exact(8).map(|b| u64::from_le_bytes(b.try_into().unwrap())).collect())
@@ -247,9 +247,7 @@ impl Tombstones {
     pub fn without(&self, remove: &[u64]) -> Tombstones {
         let mut remove = remove.to_vec();
         remove.sort_unstable();
-        Tombstones {
-            ids: self.ids.iter().copied().filter(|id| remove.binary_search(id).is_err()).collect(),
-        }
+        Tombstones { ids: self.ids.iter().copied().filter(|id| remove.binary_search(id).is_err()).collect() }
     }
 
     pub fn encode(&self) -> Vec<u8> {

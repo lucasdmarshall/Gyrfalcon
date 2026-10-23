@@ -141,10 +141,9 @@ impl ModelArgs {
         let embedder: Box<dyn Embedder> = match self.embedder {
             EmbedderKind::Hash => Box::new(HashEmbedder::new(config.dimension)),
             EmbedderKind::Ort => {
-                let model_dir = self
-                    .model_dir
-                    .as_ref()
-                    .ok_or_else(|| Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the ort embedder".into()))?;
+                let model_dir = self.model_dir.as_ref().ok_or_else(|| {
+                    Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the ort embedder".into())
+                })?;
                 Box::new(SessionEmbedder::new(OrtModel::load(model_dir)?, config.model_id.clone()))
             }
             EmbedderKind::Http => {
@@ -179,10 +178,7 @@ fn read_documents(files: &[PathBuf]) -> Result<Vec<Document>, Error> {
         std::io::stdin().read_to_string(&mut text)?;
         return Ok(vec![Document::body("stdin", text)]);
     }
-    files
-        .iter()
-        .map(|path| Ok(Document::body(path.to_string_lossy(), std::fs::read_to_string(path)?)))
-        .collect()
+    files.iter().map(|path| Ok(Document::body(path.to_string_lossy(), std::fs::read_to_string(path)?))).collect()
 }
 
 fn run(cli: Cli) -> Result<(), Error> {

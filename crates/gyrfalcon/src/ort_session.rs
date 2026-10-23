@@ -114,7 +114,10 @@ impl OrtModel {
                 "token_type_ids" => types.clone(),
                 other => return Err(Error::ModelUnavailable(format!("unsupported model input {other}"))),
             };
-            values.push((Cow::from(name.clone()), SessionInputValue::from(Tensor::from_array((shape, data)).map_err(model_error)?)));
+            values.push((
+                Cow::from(name.clone()),
+                SessionInputValue::from(Tensor::from_array((shape, data)).map_err(model_error)?),
+            ));
         }
         let mut session = self.session.lock().unwrap_or_else(|p| p.into_inner());
         let outputs = session.run(values).map_err(model_error)?;

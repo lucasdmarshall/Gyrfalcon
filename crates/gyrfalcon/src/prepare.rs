@@ -60,12 +60,7 @@ pub fn tokenize(text: &str) -> Vec<Token> {
         if piece.is_empty() || piece.chars().count() > MAX_TOKEN_CHARS {
             return;
         }
-        tokens.push(Token {
-            text: piece.to_lowercase(),
-            position: tokens.len(),
-            offset_from: from,
-            offset_to: to,
-        });
+        tokens.push(Token { text: piece.to_lowercase(), position: tokens.len(), offset_from: from, offset_to: to });
     };
     for found in separator().find_iter(text) {
         push(start, found.start(), &mut tokens);

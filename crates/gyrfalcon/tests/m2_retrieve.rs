@@ -1,5 +1,7 @@
 use gyrfalcon::testing::CountingEmbedder;
-use gyrfalcon::{Document, Error, FallbackStep, Index, IndexConfig, LexicalIndex, Quantization, RetrieveOptions, TantivyLexical};
+use gyrfalcon::{
+    Document, Error, FallbackStep, Index, IndexConfig, LexicalIndex, Quantization, RetrieveOptions, TantivyLexical,
+};
 
 fn unit(dimension: usize, axis: usize, sign: f32) -> Vec<f32> {
     let mut vector = vec![0.0; dimension];
