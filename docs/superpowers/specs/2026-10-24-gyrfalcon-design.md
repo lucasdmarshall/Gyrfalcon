@@ -18,7 +18,9 @@ The project name and the Cargo package name are `gyrfalcon`. There is no trailin
 - C++ source is not part of this repository. C++ arrives inside USearch, ONNX Runtime, and SimSIMD. SimSIMD is called directly only to rescore a binary shortlist.
 - Deletes and updates do not rewrite a sealed segment. A collection-level tombstone bitmap is the only delete record. Search drops dead chunk ids inside the USearch predicate and the Tantivy collector, so a dead chunk never takes a top-k slot. The dense list is short only when fewer than `limit` live chunks exist. The lexical list is short only when fewer than `limit` live chunks contain a query term.
 - Each segment keeps its own Tantivy index. BM25 scoring uses a collection-wide `Bm25StatisticsProvider`. The totals are the sum of per-segment statistics, dead chunks included, precomputed at seal and at merge. Query does not scan postings to subtract tombstones. A merge rewrites the segments it touches and is what drops dead chunks from the totals.
-- Auto-merge is a background tiered policy. It merges only small segments that share a size tier, and it never rebuilds a large segment as part of a write call. The retrieve bench still reports 1-segment and 50-segment layouts. The ingest bench includes merge time.
+- Auto-merge is a background tiered policy. It merges only small segments that share a size tier, and it never rebuilds a large segment as part of a write call. A segment with `chunk_count >= 100_000` and a dead ratio above 0.20 is rewritten alone, in the background, from its live chunks. The retrieve bench still reports 1-segment and 50-segment layouts. The ingest bench includes merge time.
+- A chunk's `chunk_id` does not change when its segment is merged or rewritten. Tombstones are sets of `chunk_id`. A delete that commits while a merge is building stays dead after the swap.
+- After a manifest swap, old segment files are deleted only when the last reader of the retired epoch has released them. A failed delete, including a Windows sharing violation on a memory-mapped file, stays queued and is retried.
 
 ## Non-goals for v1
 
@@ -185,9 +187,9 @@ A segment's tier is `floor(log2(chunk_count))`, with `chunk_count` taken from `s
 After `index_documents`, delete, or update publishes its manifest, the process schedules one background merger if none is running. The merger:
 
 1. Under the writer lock, picks the lowest tier that contains at least 8 segments whose 8 smallest `chunk_count` values sum to at most 100,000. The inputs are those 8 segments. A segment with `chunk_count` greater than or equal to 100,000 is never an input. If no tier qualifies, the merger stops.
-2. Releases the lock and builds a new segment directory from those 8. It skips chunk ids that are dead in the tombstone bitmap copied at step 1. The new HNSW, Tantivy index, `vectors.bin`, and `terms.bin` contain only the chunks it wrote. This build does not hold the writer lock.
-3. Takes the writer lock again. If any input id is no longer in the manifest, it deletes the new directory and stops. Otherwise it writes the next catalog (input rows retargeted to the new segment, skipped dead rows dropped, every other row kept) and the next BM25 map `published - sum(input terms.bin) + new terms.bin`. `published` is the map named by the manifest at this moment, so a segment sealed while the build ran stays in the sum. It fsyncs those files and the new segment, then renames `manifest.json` into place. The rename is the only publish. Searchers that already opened the previous manifest keep it.
-4. Deletes the input segment directories only after that rename. A crash before the rename leaves the previous manifest, and the next open deletes the unreferenced new directory. A crash after the rename deletes unreferenced input directories on the next open.
+2. Releases the lock and builds a new segment directory from those 8. Every live chunk is copied under its existing `chunk_id`. The builder skips ids that are dead in the tombstone bitmap copied at step 1. This build does not hold the writer lock.
+3. Takes the writer lock again. If any input id is no longer in the manifest, it deletes the new directory and stops. It reads the tombstone bitmap named by the manifest now, not the copy from step 1. Catalog rows whose `chunk_id` is in that bitmap are not retargeted. They stay dead. The swap does not lower `tombstone_generation`. A chunk deleted while the build ran is therefore absent from the live catalog and still present in the bitmap, even if the new files also contain its vector. Search keeps filtering that id. The next BM25 map is `published - sum(input terms.bin) + new terms.bin`, where `published` is the map named by the manifest at this moment, so a segment sealed while the build ran stays in the sum. It fsyncs those files and the new segment, then renames `manifest.json` into place. The rename is the only publish. `epoch` increases by 1. Searchers that already opened the previous manifest keep it.
+4. Does not delete the input directories in this step. They stay until the reader epoch that mapped them reaches refcount 0. See Reader epochs. A crash before the rename leaves the previous manifest, and the next open deletes an unreferenced new directory only when no reader has it. A crash after the rename leaves the input directories queued for the reaper.
 5. Repeats from step 1 until no tier qualifies.
 
 The tombstone bitmap is not cleared. Other segments may still contain dead ids, and search keeps filtering them. `gyr compact --all` is the manual path that rewrites every segment, drops every dead id, and publishes an empty tombstone bitmap. Auto-merge never calls it. `gyr compact` with no flag runs the same tier selection once, synchronously, and then returns.
@@ -195,6 +197,22 @@ The tombstone bitmap is not cleared. Other segments may still contain dead ids, 
 `index_documents` returning does not mean the merger is idle. `gyr serve` leaves the merger running. `gyr index` and `gyr bench ingest` wait until the merger is idle before the process exits, so a one-shot process still publishes the merge. A test can pause the merger and observe the seal manifest before the swap.
 
 When the sealed count is greater than 32, `IndexReport` and later `retrieve` responses include `warning: "segment_count"`. The write still succeeds. Thirty-two is the fan-out warning, not a merge-everything trigger. The 50-segment retrieve bench sets auto-merge off and seals the same chunks into 50 segments.
+
+### Dead-ratio rewrite
+
+A segment with `chunk_count >= 100_000` never enters a tier merge, so its dead chunks would stay in the files and in the BM25 sums. After the tier pass finds nothing to do, the same background worker looks for a single segment where `chunk_count >= 100_000` and `dead_in_segment / chunk_count > 0.20`. `dead_in_segment` is the number of that segment's stored chunk ids that appear in the current tombstone bitmap. It rewrites the segment with the highest ratio, one segment per pass.
+
+The rewrite copies each live chunk under the same `chunk_id` and skips dead ids. It publishes with the tier-merge swap formula for one input: BM25 map `published - old terms.bin + new terms.bin`, and manifest scalars recomputed from that map. The new tombstone bitmap is the previous bitmap minus the dead ids that were stored in this segment. Those ids are in no other segment. The swap still waits for reader epochs before deleting the old directory.
+
+`dead_ratio_limit` in the manifest is `0.20`. The comparison is strict: a ratio of exactly 0.20 does not rewrite.
+
+### Reader epochs
+
+A publish stamps `epoch` as one greater than the manifest it replaces. `acquire` copies that epoch, maps its segments, and increments an in-process refcount. `release` decrements it. Retrieve and answer hold the guard until the response is finished.
+
+The reaper deletes a retired epoch's segment directories only when its refcount is 0 and the current manifest does not name them. On Unix, unlinking a file that is still mapped can succeed. Gyrfalcon waits for refcount 0 anyway, so a reader does not lose the path it acquired. On Windows, `DeleteFile` fails with a sharing violation while any mapping exists. A failed delete, including that failure, leaves the path queued. The reaper retries on the next `release` and on the next successful publish. The merge does not fail because a delete failed.
+
+One process owns the collection. The refcount is not a cross-process lock. A test holds `acquire` across a swap, asserts the old segment directory still exists, releases, and asserts a deleter then removes it. A second test injects a deleter that fails once with a busy error and succeeds on the retry.
 
 `vectors.bin` is the quantized payload in ascending chunk-id order. Int8 stores `dimension` bytes per vector. Float16 stores two bytes, float32 four. Binary mode stores the int8 matrix here too. The Hamming graph inside `usearch.index` sets a bit when the corresponding int8 byte is greater than 0. Query maps `vectors.bin` only in binary mode, for the SimSIMD rescore. Int8 query does not map it. Compaction reads it and does not ask USearch to return stored vectors.
 
@@ -230,9 +248,11 @@ Quantization happens once, and `vectors.bin` stores that result. `f32` stores th
 | `bm25_num_tokens` | sum of segment `num_tokens`, dead included |
 | `segments_per_tier` | 8 |
 | `max_merge_chunks` | 100000 |
+| `dead_ratio_limit` | 0.20 |
+| `epoch` | integer, increases by 1 on every publish |
 | `sealed_segments` | array of segment ids |
 
-`Index::create(path, config)` writes this file with `tombstone_generation` 0, `catalog_generation` 0, `bm25_generation` 0, `bm25_num_docs` 0, `bm25_num_tokens` 0, and `sealed_segments` empty. It also writes empty generation-0 tombstone, catalog, and BM25 stats files. `Index::open(path, expected)` reads the manifest and compares `model_id`, `dimension`, `quantization`, and `analyzer_id` to `expected`.
+`Index::create(path, config)` writes this file with `tombstone_generation` 0, `catalog_generation` 0, `bm25_generation` 0, `bm25_num_docs` 0, `bm25_num_tokens` 0, `epoch` 1, and `sealed_segments` empty. It also writes empty generation-0 tombstone, catalog, and BM25 stats files. Every later publish writes `epoch` as one greater than the manifest it replaces. `Index::open(path, expected)` reads the manifest and compares `model_id`, `dimension`, `quantization`, and `analyzer_id` to `expected`.
 
 On any mismatch, open returns `IncompatibleIndex` and does not map segment files, does not load the ONNX model, and does not return a handle.
 
@@ -267,7 +287,7 @@ A missing collection directory is `IndexNotFound` (HTTP 404). A lock file whose 
 
 Sealed segment files stay immutable. Tantivy's own `delete_term` is not used. The only delete record is the collection tombstone bitmap, so USearch and Tantivy cannot disagree about liveness.
 
-Chunk ids in the bitmap are dead. A dead id stays in the sealed files until compaction.
+Chunk ids in the bitmap are dead. A `chunk_id` is allocated once and is the USearch key, the Tantivy fast field, the catalog key, and the tombstone key. A merge or a dead-ratio rewrite copies a live chunk under that same id. It does not renumber. A dead id stays in the sealed files until a tier merge or a dead-ratio rewrite drops it. Search excludes it by id while it is still stored.
 
 Catalog file `catalog/{catalog_generation}.bin` is a sorted table of live rows: `doc_id`, `chunk_id`, `segment_id`, `byte_start`, `byte_end`. Tombstone file `tombstones/{tombstone_generation}.bin` is a sorted unique `u64` array of dead chunk ids. BM25 file `bm25/{bm25_generation}.bin` is the summed term map, dead chunks included until a merge rewrites them. The three counters advance independently. A publish writes each changed file at `current + 1` for that counter, fsyncs it, then replaces `manifest.json` via write-to-temp and rename on the same filesystem.
 
@@ -301,14 +321,14 @@ Query exclusion happens inside each engine. There is no pass that searches first
 `gyr compact --all` is separate from the tiered merger:
 
 1. Read every sealed segment. Skip tombstoned chunk ids.
-2. Write one new segment with a new Tantivy index, a new USearch file, `vectors.bin`, and `terms.bin`, containing only live chunks. Quantized vectors are copied from the old `vectors.bin` files. `doc_key` and chunk text are copied from the old Tantivy stored fields.
+2. Write one new segment with a new Tantivy index, a new USearch file, `vectors.bin`, and `terms.bin`, containing only live chunks. Each live chunk keeps its `chunk_id`. Quantized vectors are copied from the old `vectors.bin` files. `doc_key` and chunk text are copied from the old Tantivy stored fields.
 3. Write a new catalog that points every live chunk at the new segment.
 4. Write an empty tombstone generation and a BM25 map counted from the live chunks only. Set the manifest scalars from that map.
-5. Fsync, rename `manifest.json`, then delete the old segment directories.
+5. Fsync and rename `manifest.json` with the next `epoch`. Old segment directories are queued for the reader-epoch reaper. They are not deleted in this step.
 
-Until a merge or `--all` drops them, dead vectors still occupy the sealed files and the BM25 sums. The 1,000,000-vector RAM measurement uses a collection with an empty tombstone bitmap. A report that has tombstones must say `tombstone_count`.
+Until a tier merge, a dead-ratio rewrite, or `--all` drops them, dead vectors still occupy the sealed files and the BM25 sums. The 1,000,000-vector RAM measurement uses a collection with an empty tombstone bitmap. A report that has tombstones must say `tombstone_count`.
 
-Readers copy the manifest generation at the start of a request and keep those maps until the request ends. A publish does not unmap a request already in flight.
+Readers `acquire` the epoch at the start of a request and `release` it when the response is finished. A publish does not unmap a request already in flight.
 
 ## Models
 
@@ -530,7 +550,10 @@ Each reads `bench/fixtures/text-only/` produced by `gyr bench accuracy --prepare
 - Open with a different `model_id`, `dimension`, `quantization`, or `analyzer_id` returns `IncompatibleIndex` and leaves no mapped files (a guard counter in the segment open function stays 0).
 - Delete then retrieve does not return the dead chunk, and the collection BM25 `doc_freq` for a term that existed only in that chunk stays the same. After a tiered merge of the segment that stored it, `doc_freq` drops by one. Update returns only the new chunk ids. A manifest renamed halfway is simulated by stopping before rename: the old document remains retrievable.
 - A segment of 100 chunks, 90 of them tombstoned, with the query term present in every chunk, returns 10 live ids for limit 10 from both engines.
-- Eight segments of 10 chunks and one segment of 1,000 chunks: after the background merge publishes, the eight are one segment and the 1,000-chunk segment is still in the manifest. Pausing the merger shows `index_documents` has already returned with the eight segments sealed. A segment whose `chunk_count` is 100,000 is never an auto-merge input. When the sealed count exceeds 32, the report includes `warning: "segment_count"`.
+- Eight segments of 10 chunks and one segment of 1,000 chunks: after the background merge publishes, the eight are one segment and the 1,000-chunk segment is still in the manifest. A live chunk's `chunk_id` is the same before and after. Pausing the merger shows `index_documents` has already returned with the eight segments sealed. A segment whose `chunk_count` is 100,000 is never a tier-merge input.
+- A merge build is paused after it has copied chunk `C`. A delete of `C` commits. The swap then publishes. Retrieve does not return `C`. The tombstone bitmap contains `C`. A survivor chunk keeps its `chunk_id`.
+- A segment of 100,000 stored chunks with a dead ratio of 0.21 is rewritten in the background to its live chunks. The same `chunk_id`s survive. The dead ids are removed from the tombstone bitmap and from the BM25 sums. A ratio of 0.20 does not rewrite.
+- A reader that acquired the pre-swap epoch still sees the old segment directory after the swap. After release, the reaper deletes it. A deleter that returns a busy error the first time leaves the directory in place until the retry.
 - Seal at 100,000 is tested with the threshold overridden to 3.
 - Binary mode maps `vectors.bin` and rescores with SimSIMD. Int8 mode does not map `vectors.bin` during retrieve.
 - `index_documents` is still durable after a crash of the process that returned: the new chunk ids are in a sealed segment named by the manifest.
