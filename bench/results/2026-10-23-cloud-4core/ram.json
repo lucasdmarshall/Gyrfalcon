@@ -1,0 +1,23 @@
+{
+  "bm25_bytes": 23,
+  "catalog_bytes": 44888908,
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 384,
+    "git_revision": "696f2af2e2876a3550a9d7b305de5d9123e83a42",
+    "model_id": "BAAI/bge-small-en-v1.5",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "rss_model_dropped": 1112608768,
+  "rss_model_loaded": 1159606272,
+  "tantivy_bytes": 24311380,
+  "tombstone_bytes": 0,
+  "tombstone_count": 0,
+  "usearch_bytes": 532594316,
+  "vector_payload_planning_bytes": 384000000,
+  "vectors": 1000000,
+  "vectors_bin_bytes": 384000000
+}
