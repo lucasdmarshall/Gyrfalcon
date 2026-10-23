@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/gyrfalcon"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# USearch and Tantivy are unusable unoptimized; tests build 100,000-chunk segments.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
