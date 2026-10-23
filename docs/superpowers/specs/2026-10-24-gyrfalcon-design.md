@@ -17,8 +17,8 @@ The project name and the Cargo package name are `gyrfalcon`. There is no trailin
 - Default quantization is int8 cosine. Binary is an optional mode.
 - C++ source is not part of this repository. C++ arrives inside USearch, ONNX Runtime, and SimSIMD. SimSIMD is called directly only to rescore a binary shortlist.
 - Deletes and updates do not rewrite a sealed segment. A collection-level tombstone bitmap is the only delete record. Search drops dead chunk ids inside the USearch predicate and the Tantivy collector, so a dead chunk never takes a top-k slot. The dense list is short only when fewer than `limit` live chunks exist. The lexical list is short only when fewer than `limit` live chunks contain a query term.
-- Each segment keeps its own Tantivy index. BM25 scoring uses a collection-wide `Bm25StatisticsProvider`, so IDF and average document length do not depend on which segment a chunk sits in.
-- Auto-compaction keeps a collection at or below 8 sealed segments. The retrieve bench also reports a 50-segment layout with auto-compaction off.
+- Each segment keeps its own Tantivy index. BM25 scoring uses a collection-wide `Bm25StatisticsProvider`. The totals are the sum of per-segment statistics, dead chunks included, precomputed at seal and at merge. Query does not scan postings to subtract tombstones. A merge rewrites the segments it touches and is what drops dead chunks from the totals.
+- Auto-merge is a background tiered policy. It merges only small segments that share a size tier, and it never rebuilds a large segment as part of a write call. The retrieve bench still reports 1-segment and 50-segment layouts. The ingest bench includes merge time.
 
 ## Non-goals for v1
 
@@ -116,21 +116,25 @@ v1 has one implementation: `TantivyLexical`. `search` is a read. `add` and `seal
 
 A segment-local Tantivy index computes IDF and average document length from that segment alone. Those scores are not comparable with another segment's scores, so a merge would rank a rare term in a small segment above the same term in a large one.
 
-Gyrfalcon keeps one Tantivy index per segment and injects collection-wide statistics. A single Tantivy index for the whole collection would also share IDF, and it is the rejected option. The segment directory is the seal and compaction unit: `usearch.index` and `tantivy/` are sealed together and never appended to. A collection-wide Tantivy index would stay writable across calls, and its built-in statistics would keep counting tombstoned chunks until a merge. The provider drops those chunks on the same publish as the tombstone bitmap.
+Gyrfalcon keeps one Tantivy index per segment and injects collection-wide statistics. A single Tantivy index for the whole collection would also share IDF, and it is the rejected option. The segment directory is the seal and merge unit: `usearch.index` and `tantivy/` are sealed together and never appended to. A collection-wide Tantivy index would stay writable across calls.
 
-`TantivyLexical::search` calls `search_with_statistics_provider` with a `Bm25StatisticsProvider` backed by `bm25/{generation}.bin`:
+The statistics are Lucene's: each segment records its own totals, the collection total is the sum, and dead chunks stay in that sum until a merge rewrites the segment. Query does not walk postings to compute an exact live `doc_freq`. That scan would sit on the retrieve path.
+
+`TantivyLexical::search` calls `search_with_statistics_provider`. The provider reads only the published collection file. It does not open a segment dictionary.
 
 | Method | Value |
 |---|---|
-| `total_num_docs` | live chunks in the collection |
-| `total_num_tokens` | token occurrences in live chunks, repeats included |
-| `doc_freq` | live chunks that contain the term at least once |
+| `total_num_docs` | sum of segment `num_docs`, dead chunks included. Copied into the manifest as `bm25_num_docs`. |
+| `total_num_tokens` | sum of segment `num_tokens`, repeats included, dead chunks included. Copied into the manifest as `bm25_num_tokens`. |
+| `doc_freq` | sum of per-segment document frequencies for that term, dead chunks included |
 
-Average document length is `total_num_tokens / total_num_docs`. Tantivy still reads each hit's field norm from its own segment. An empty collection does not divide. It returns no hits.
+Average document length is `bm25_num_tokens / bm25_num_docs`. Tantivy still reads each hit's field norm from its own segment. An empty collection does not divide. It returns no hits.
 
-Seal writes the next stats file from the previous file plus the new chunks. Delete writes the next stats file by subtracting the dead chunks. Update subtracts the old chunks and adds the new ones. Unique terms and token counts for a chunk come from the `PreTokenizedString` stored in its segment. Compact writes stats for the live chunks only and pairs that file with the empty tombstone generation. The manifest field `bm25_generation` names the file search uses.
+Each segment directory holds `terms.bin`, a sorted table of `(term, doc_freq)` counted while the segment was written, plus `num_docs` and `num_tokens` in `segment.json`. `num_docs` is the number of chunk records stored in that directory, dead ones included. Seal writes the next collection `bm25/{generation}.bin` as the previous collection map plus this segment's `terms.bin`. That addition touches the new segment's vocabulary only. Compaction of a tier writes the new segment's `terms.bin` from the live chunks it keeps, then writes the next collection map as `published - sum(input terms.bin) + new terms.bin`. Delete and update do not subtract. Update only adds the new segment's map. Dead chunks leave the totals when a merge drops them from the files.
 
-A fixture of two segments must show that a shared term receives the hand-computed collection IDF in both segments, and that this score differs from the segment-local BM25 score.
+The two scalars are in the manifest so a reader has the collection totals without parsing the term map. The term map stays in `bm25/{generation}.bin` because a vocabulary does not belong in `manifest.json`. Both are written and fsynced before the manifest rename. `bm25_generation` names the map. Search uses that pair and no other count.
+
+A fixture of two segments must show that a shared term's collection `doc_freq` is the sum of the segment frequencies, including a tombstoned chunk, and that this score differs from either segment-local BM25 score. After a merge of the segment that held the dead chunk, that term's collection `doc_freq` drops by one. A delete alone must leave `doc_freq` unchanged.
 
 ## Chunks
 
@@ -161,23 +165,36 @@ A collection on disk:
     usearch.index
     vectors.bin
     tantivy/              Tantivy index directory
+    terms.bin
 ```
 
-`segment_id` is a zero-padded decimal, allocated by the writer. After seal, `usearch.index`, `vectors.bin`, and `tantivy/` never change. USearch opens a sealed file with `view` (memory map). Tantivy opens its directory read-only. `writer.lock` holds the writer pid. A second writer gets `WriterBusy` while that pid is alive. A dead pid is reclaimed on the next writer start.
+`segment_id` is a zero-padded decimal, allocated by the writer. After seal, `usearch.index`, `vectors.bin`, `terms.bin`, and `tantivy/` never change. USearch opens a sealed file with `view` (memory map). Tantivy opens its directory read-only. `writer.lock` holds the writer pid. A second writer gets `WriterBusy` while that pid is alive. A dead pid is reclaimed on the next writer start.
 
-`segment.json` repeats `model_id`, `dimension`, `quantization`, and `analyzer_id`. If any of those disagree with `manifest.json`, open fails with `SegmentCorrupt` and does not return an index.
+`segment.json` repeats `model_id`, `dimension`, `quantization`, `analyzer_id`, `chunk_count`, `num_docs`, and `num_tokens`. `num_docs` equals `chunk_count`. If `model_id`, `dimension`, `quantization`, or `analyzer_id` disagree with `manifest.json`, open fails with `SegmentCorrupt` and does not return an index.
 
 A writable segment exists only inside a writer call. It is not in the manifest until `seal`. Search reads only sealed segments named by the manifest the request opened. It does not see unsealed chunks.
 
-`index_documents` seals before it returns. It seals when the open segment reaches 100,000 chunks, and it seals any remainder before returning. Seal writes `segment.json`, the Tantivy directory, `usearch.index`, and `vectors.bin`, fsyncs the segment directory, then publishes a manifest. The new catalog generation is the previous live rows plus the rows just sealed. The new BM25 stats generation includes those rows. Seal does not change the tombstone generation.
+`index_documents` seals before it returns. It seals when the open segment reaches 100,000 chunks, and it seals any remainder before returning. Seal writes `segment.json`, `terms.bin`, the Tantivy directory, `usearch.index`, and `vectors.bin`, fsyncs the segment directory, then publishes a manifest. The new catalog generation is the previous live rows plus the rows just sealed. The new BM25 generation is the previous collection map plus this segment's `terms.bin`, and the manifest scalars `bm25_num_docs` and `bm25_num_tokens` grow by that segment's counts. Seal does not change the tombstone generation. The call returns after that rename. It does not wait for a merge.
 
-### Segment count
+### Tiered merge
 
-Every seal adds a segment, and a query fans out across all of them. Default `max_segments` is 8. Default `auto_compact` is on. After each seal, while the sealed count is greater than 8, the writer runs compaction before it continues or returns. Compaction rewrites the sealed segments into one, so a call that crosses the threshold returns a one-segment collection. Eight is the cap because each extra segment adds another USearch map and another Tantivy search to every query, and the retrieve bench exists to measure that fan-out rather than to let it grow without bound.
+Rebuilding every sealed segment into one HNSW graph would stall a write call for minutes on a large collection. Auto-merge does not do that. It merges a handful of small segments that share a size tier, and it leaves larger segments in place.
 
-`auto_compact` off does not refuse the write. The `IndexReport` and the HTTP JSON include `segment_count`, `max_segments`, and `warning: "segment_count"`. A later `retrieve` on that collection includes the same warning. `gyr compact` still merges on demand.
+A segment's tier is `floor(log2(chunk_count))`, with `chunk_count` taken from `segment.json` (stored records, dead included). `floor(log2(1))` is 0. `segments_per_tier` is 8. `max_merge_chunks` is 100,000.
 
-The 50-segment retrieve bench turns `auto_compact` off and seals the same chunks into 50 segments. That layout is not a supported steady state. It is a measured point.
+After `index_documents`, delete, or update publishes its manifest, the process schedules one background merger if none is running. The merger:
+
+1. Under the writer lock, picks the lowest tier that contains at least 8 segments whose 8 smallest `chunk_count` values sum to at most 100,000. The inputs are those 8 segments. A segment with `chunk_count` greater than or equal to 100,000 is never an input. If no tier qualifies, the merger stops.
+2. Releases the lock and builds a new segment directory from those 8. It skips chunk ids that are dead in the tombstone bitmap copied at step 1. The new HNSW, Tantivy index, `vectors.bin`, and `terms.bin` contain only the chunks it wrote. This build does not hold the writer lock.
+3. Takes the writer lock again. If any input id is no longer in the manifest, it deletes the new directory and stops. Otherwise it writes the next catalog (input rows retargeted to the new segment, skipped dead rows dropped, every other row kept) and the next BM25 map `published - sum(input terms.bin) + new terms.bin`. `published` is the map named by the manifest at this moment, so a segment sealed while the build ran stays in the sum. It fsyncs those files and the new segment, then renames `manifest.json` into place. The rename is the only publish. Searchers that already opened the previous manifest keep it.
+4. Deletes the input segment directories only after that rename. A crash before the rename leaves the previous manifest, and the next open deletes the unreferenced new directory. A crash after the rename deletes unreferenced input directories on the next open.
+5. Repeats from step 1 until no tier qualifies.
+
+The tombstone bitmap is not cleared. Other segments may still contain dead ids, and search keeps filtering them. `gyr compact --all` is the manual path that rewrites every segment, drops every dead id, and publishes an empty tombstone bitmap. Auto-merge never calls it. `gyr compact` with no flag runs the same tier selection once, synchronously, and then returns.
+
+`index_documents` returning does not mean the merger is idle. `gyr serve` leaves the merger running. `gyr index` and `gyr bench ingest` wait until the merger is idle before the process exits, so a one-shot process still publishes the merge. A test can pause the merger and observe the seal manifest before the swap.
+
+When the sealed count is greater than 32, `IndexReport` and later `retrieve` responses include `warning: "segment_count"`. The write still succeeds. Thirty-two is the fan-out warning, not a merge-everything trigger. The 50-segment retrieve bench sets auto-merge off and seals the same chunks into 50 segments.
 
 `vectors.bin` is the quantized payload in ascending chunk-id order. Int8 stores `dimension` bytes per vector. Float16 stores two bytes, float32 four. Binary mode stores the int8 matrix here too. The Hamming graph inside `usearch.index` sets a bit when the corresponding int8 byte is greater than 0. Query maps `vectors.bin` only in binary mode, for the SimSIMD rescore. Int8 query does not map it. Compaction reads it and does not ask USearch to return stored vectors.
 
@@ -209,10 +226,13 @@ Quantization happens once, and `vectors.bin` stores that result. `f32` stores th
 | `tombstone_generation` | integer |
 | `catalog_generation` | integer |
 | `bm25_generation` | integer |
-| `max_segments` | 8 unless create overrides it |
+| `bm25_num_docs` | sum of segment `num_docs`, dead included |
+| `bm25_num_tokens` | sum of segment `num_tokens`, dead included |
+| `segments_per_tier` | 8 |
+| `max_merge_chunks` | 100000 |
 | `sealed_segments` | array of segment ids |
 
-`Index::create(path, config)` writes this file with `tombstone_generation` 0, `catalog_generation` 0, `bm25_generation` 0, and `sealed_segments` empty. It also writes empty generation-0 tombstone, catalog, and BM25 stats files. `Index::open(path, expected)` reads the manifest and compares `model_id`, `dimension`, `quantization`, and `analyzer_id` to `expected`.
+`Index::create(path, config)` writes this file with `tombstone_generation` 0, `catalog_generation` 0, `bm25_generation` 0, `bm25_num_docs` 0, `bm25_num_tokens` 0, and `sealed_segments` empty. It also writes empty generation-0 tombstone, catalog, and BM25 stats files. `Index::open(path, expected)` reads the manifest and compares `model_id`, `dimension`, `quantization`, and `analyzer_id` to `expected`.
 
 On any mismatch, open returns `IncompatibleIndex` and does not map segment files, does not load the ONNX model, and does not return a handle.
 
@@ -249,15 +269,14 @@ Sealed segment files stay immutable. Tantivy's own `delete_term` is not used. Th
 
 Chunk ids in the bitmap are dead. A dead id stays in the sealed files until compaction.
 
-Catalog file `catalog/{catalog_generation}.bin` is a sorted table of live rows: `doc_id`, `chunk_id`, `segment_id`, `byte_start`, `byte_end`. Tombstone file `tombstones/{tombstone_generation}.bin` is a sorted unique `u64` array of dead chunk ids. BM25 file `bm25/{bm25_generation}.bin` is the live collection statistics. The three counters advance independently. A publish writes each changed file at `current + 1` for that counter, fsyncs it, then replaces `manifest.json` via write-to-temp and rename on the same filesystem.
+Catalog file `catalog/{catalog_generation}.bin` is a sorted table of live rows: `doc_id`, `chunk_id`, `segment_id`, `byte_start`, `byte_end`. Tombstone file `tombstones/{tombstone_generation}.bin` is a sorted unique `u64` array of dead chunk ids. BM25 file `bm25/{bm25_generation}.bin` is the summed term map, dead chunks included until a merge rewrites them. The three counters advance independently. A publish writes each changed file at `current + 1` for that counter, fsyncs it, then replaces `manifest.json` via write-to-temp and rename on the same filesystem.
 
 Delete document:
 
 1. Read the current catalog rows for `doc_id`. An unknown `doc_id` publishes nothing and returns `deleted_chunks: 0`.
 2. Write the next tombstone file as the previous dead ids plus those chunk ids.
 3. Write the next catalog file without that document's rows.
-4. Write the next BM25 file by subtracting those chunks' unique terms and token counts from the current stats.
-5. Publish `manifest.json` with the three new generation numbers.
+4. Publish `manifest.json` with the new tombstone and catalog generations. Leave `bm25_generation`, `bm25_num_docs`, and `bm25_num_tokens` unchanged.
 
 Delete of one chunk removes that one id and leaves the document's other chunks live.
 
@@ -266,8 +285,8 @@ Update document, including an unknown `doc_id` (that case is an insert):
 1. Take the writer lock. Chunk and embed the new text into a new segment directory, including `segment.json`. Fsync `usearch.index`, `vectors.bin`, and the Tantivy directory. The new chunk ids are on disk and still unreferenced. Delete holds the same lock. Neither runs beside `index_documents`.
 2. Build the next tombstone bitmap by adding the document's previous chunk ids. An insert adds none.
 3. Build the next catalog: drop the old rows, add the new rows. Each row's `doc_id` is the caller id. The Tantivy document also stores that string in a `raw` field named `doc_key`.
-4. Build the next BM25 stats from the new live set.
-5. Publish one manifest that adds the new segment and points at the new catalog, tombstone, and BM25 generations. Old ids become dead in this same rename, not earlier. If the sealed count then exceeds `max_segments` and `auto_compact` is on, compaction runs before the call returns.
+4. Add the new segment's `terms.bin` to the collection BM25 map and add its `num_docs` and `num_tokens` to the manifest scalars. Do not subtract the old chunks. They leave the totals when a merge drops their segment.
+5. Publish one manifest that adds the new segment and points at the new catalog, tombstone, and BM25 generations. Old ids become dead in this same rename, not earlier. The call then schedules the background merger and returns. It does not merge before returning.
 
 A crash before the manifest rename leaves the previous manifest in place. Open deletes segment directories the manifest does not list. The old document stays retrievable. After the rename, the old chunk ids are dead and the new segment is listed.
 
@@ -279,16 +298,15 @@ Query exclusion happens inside each engine. There is no pass that searches first
 - HNSW may stop before it has filled that count. The segment then repeats `filtered_search` with `expansion_search` 128, 256, 512, and 1024. If the count is still short while the segment has enough live chunks, that segment finishes with an exact scan of its `vectors.bin` that keeps the closest live ids. Tantivy does not need this retry. Its collector already visits every match.
 - A test tombstones 90 of 100 chunks. Every chunk contains the query term. Limit 10 must return 10 ids from USearch `filtered_search` and 10 ids from the Tantivy collector. None of those ids are dead.
 
-Compaction, `gyr compact`:
+`gyr compact --all` is separate from the tiered merger:
 
-1. Read every sealed segment.
-2. Skip tombstoned chunk ids.
-3. Write one new segment with a new Tantivy index, a new USearch file, and a new `vectors.bin`, containing only live chunks. Quantized vectors are copied from the old `vectors.bin` files. `doc_key` and chunk text are copied from the old Tantivy stored fields.
-4. Write a new catalog that points every live chunk at the new segment.
-5. Write an empty tombstone generation and a BM25 stats file that counts only the live chunks.
-6. Publish the manifest, fsync, then delete the old segment directories and the old generation files.
+1. Read every sealed segment. Skip tombstoned chunk ids.
+2. Write one new segment with a new Tantivy index, a new USearch file, `vectors.bin`, and `terms.bin`, containing only live chunks. Quantized vectors are copied from the old `vectors.bin` files. `doc_key` and chunk text are copied from the old Tantivy stored fields.
+3. Write a new catalog that points every live chunk at the new segment.
+4. Write an empty tombstone generation and a BM25 map counted from the live chunks only. Set the manifest scalars from that map.
+5. Fsync, rename `manifest.json`, then delete the old segment directories.
 
-Until compact, dead vectors still occupy the sealed files. The 1,000,000-vector RAM measurement uses a collection with an empty tombstone bitmap. A report that has tombstones must say `tombstone_count`.
+Until a merge or `--all` drops them, dead vectors still occupy the sealed files and the BM25 sums. The 1,000,000-vector RAM measurement uses a collection with an empty tombstone bitmap. A report that has tombstones must say `tombstone_count`.
 
 Readers copy the manifest generation at the start of a request and keep those maps until the request ends. A publish does not unmap a request already in flight.
 
@@ -352,7 +370,8 @@ The server does not fuse ranks, tokenize, or open USearch on its own. One proces
 | `gyr index` | create or open, then `index_documents` from files or stdin |
 | `gyr query` | `retrieve` or `answer` for one query |
 | `gyr serve` | HTTP layer |
-| `gyr compact` | compaction |
+| `gyr compact` | one synchronous tiered merge |
+| `gyr compact --all` | rewrite every segment and clear tombstones |
 | `gyr bench retrieve` | single-flight and concurrent retrieve clocks |
 | `gyr bench ingest` | docs/sec |
 | `gyr bench ram` | 1,000,000-vector footprint |
@@ -376,13 +395,26 @@ Concurrent columns: in-flight queries of 4, 16, and 32. Workers share the 1000-q
 
 A second report repeats the concurrency columns with rerank on, on the one-segment layout. The headline "retrieve" number is the rerank-off, one-segment, single-flight p50 and p99. The sub-10 ms target refers to that number on the bench machine, and the report must name the machine. A result above 10 ms is a real result. It is not omitted.
 
-The rerank-off protocol also runs on a 50-segment layout of the same chunks. `gyr bench retrieve --segments 1` and `gyr bench retrieve --segments 50` each record single-flight p50 and p99 and the concurrent columns at in-flight 4, 16, and 32. The 50-segment build sets `auto_compact` off and splits the chunks as evenly as the chunk count allows. The report records `segment_count`.
+The rerank-off protocol also runs on a 50-segment layout of the same chunks. `gyr bench retrieve --segments 1` and `gyr bench retrieve --segments 50` each record single-flight p50 and p99 and the concurrent columns at in-flight 4, 16, and 32. The 50-segment build sets auto-merge off and splits the chunks as evenly as the chunk count allows. The report records `segment_count`.
+
+Every retrieve column also records where HNSW stopped, as a percentage of the 1000 timed queries. Warmup queries are not counted. A query is counted once, at the deepest step any of its segments reached:
+
+| Field | Query stopped after |
+|---|---|
+| `fallback_pct.64` | the first `filtered_search` at `expansion_search` 64 filled the live count |
+| `fallback_pct.128` | a retry at 128 was the deepest step |
+| `fallback_pct.256` | a retry at 256 was the deepest step |
+| `fallback_pct.512` | a retry at 512 was the deepest step |
+| `fallback_pct.1024` | a retry at 1024 was the deepest step |
+| `fallback_pct.exact` | the segment scanned `vectors.bin` |
+
+The six percentages sum to 100. The same six fields are on the rerank-on report and on both segment layouts.
 
 Time-to-request is measured on the same query list, single-flight and in-flight 16, rerank off and rerank on, on the one-segment layout. The clock stops when the chat-completion request bytes are written to the socket. A local discard server accepts the bytes and does not run a model, so the clock has no provider time in it. The report says `llm: discarded`.
 
 ### Ingest
 
-Headline docs/sec is prefix off, local ort embedder, product chunker, from the first byte read to the manifest rename after the final seal. The report includes document count, chunk count, and wall seconds. A second row turns contextual prefix on and names the LLM used to write prefixes.
+Headline docs/sec is prefix off, local ort embedder, product chunker, auto-merge on. The fixture is 16 files, each indexed by its own `index_documents` call and each producing 10,000 chunks, so the segments share a tier and eight of them sum to 80,000 chunks. That is under `max_merge_chunks`, so the merger runs. The clock starts at the first byte read and stops when the background merger is idle after the last seal. The report's docs/sec uses the 16 files. It also reports chunks/sec, `seal_wall_seconds`, and `merge_wall_seconds`. A row with auto-merge off records seal-only throughput on the same 16 files and is not the headline. A further row turns contextual prefix on, with auto-merge on, and names the LLM used to write prefixes.
 
 ### RAM at 1,000,000 vectors
 
@@ -409,11 +441,13 @@ Questions: `queries.json` entries whose `source` is exactly `text`. The harness 
 
 `qrels.json` maps each query UUID to one object, `{ "doc_id", "section_id" }`. Prepare aborts if a text-only query has any other shape. `section_id` is a zero-based index into that paper's `sections` array. Prepare aborts if it points outside the array.
 
-The relevant chunk id is the string `doc_key` `{doc_id}#{section_id}`. One query has one relevant chunk. Gain is 1 for that `doc_key` and 0 for every other retrieved id. Rank is the 1-based position of that `doc_key` in the system's ordered retrieve list. Rank is absent when the id is not in the list.
+The relevant chunk id is the string `doc_key` `{doc_id}#{section_id}`. One query has one relevant chunk. Gain is 1 for that `doc_key` and 0 for every other retrieved id.
+
+The accuracy fixture stores one chunk per section. A section is not split, so each `doc_key` is written once. Title and abstract are their own keys and are not relevant. The harness still dedupes, because a retriever can emit the same `doc_key` more than once. Before metrics, and before the five context chunks are chosen, the harness rewrites each system's ordered list in one place: keep the first occurrence of a `doc_key` and drop later copies. Rank is the 1-based position in that rewritten list. Rank is absent when the id is not in the list. Gyrfalcon, RustyRAG, Swiftide, and LlamaIndex all go through this harness step. None of them is trusted to dedupe on its own.
 
 Corpus: every paper JSON under `corpus/`. Each section becomes one chunk with that `doc_key`. The indexed text is that section's `text` field only. Tables and images are not indexed. Title and abstract are additional chunks, `{paper_id}#title` and `{paper_id}#abstract`, and they are not qrel targets. All 1000 papers are indexed, including hard negatives. Adapters must not re-split these chunks and must not parse PDFs. After index, each adapter prints its chunk count. The harness aborts the comparison if the four counts differ.
 
-Each system returns at least 10 ordered `doc_key`s from retrieval, before generation. The harness aborts if any list is shorter than 10. The answer prompt receives the first 5 of that list, in that order.
+Each system returns at least 10 ordered `doc_key`s from retrieval, before generation. The harness aborts if any list is shorter than 10 before dedupe. The answer prompt receives the first 5 of the harness-deduped list, in that order.
 
 #### Retrieval table
 
@@ -494,9 +528,9 @@ Each reads `bench/fixtures/text-only/` produced by `gyr bench accuracy --prepare
 - Query path calls `prepare` once. A test double embedder and a test double lexical index both observe that single value.
 - RRF scores match a hand-computed fixture with constant 60.
 - Open with a different `model_id`, `dimension`, `quantization`, or `analyzer_id` returns `IncompatibleIndex` and leaves no mapped files (a guard counter in the segment open function stays 0).
-- Delete then retrieve does not return the dead chunk, and the collection BM25 `doc_freq` for a term that existed only in that chunk drops by one. Update returns only the new chunk ids. A manifest renamed halfway is simulated by stopping before rename: the old document remains retrievable.
+- Delete then retrieve does not return the dead chunk, and the collection BM25 `doc_freq` for a term that existed only in that chunk stays the same. After a tiered merge of the segment that stored it, `doc_freq` drops by one. Update returns only the new chunk ids. A manifest renamed halfway is simulated by stopping before rename: the old document remains retrievable.
 - A segment of 100 chunks, 90 of them tombstoned, with the query term present in every chunk, returns 10 live ids for limit 10 from both engines.
-- With `max_segments` overridden to 2 and `auto_compact` on, the third seal returns one sealed segment. With `auto_compact` off, the third seal returns three segments and `warning: "segment_count"`.
+- Eight segments of 10 chunks and one segment of 1,000 chunks: after the background merge publishes, the eight are one segment and the 1,000-chunk segment is still in the manifest. Pausing the merger shows `index_documents` has already returned with the eight segments sealed. A segment whose `chunk_count` is 100,000 is never an auto-merge input. When the sealed count exceeds 32, the report includes `warning: "segment_count"`.
 - Seal at 100,000 is tested with the threshold overridden to 3.
 - Binary mode maps `vectors.bin` and rescores with SimSIMD. Int8 mode does not map `vectors.bin` during retrieve.
 - `index_documents` is still durable after a crash of the process that returned: the new chunk ids are in a sealed segment named by the manifest.
