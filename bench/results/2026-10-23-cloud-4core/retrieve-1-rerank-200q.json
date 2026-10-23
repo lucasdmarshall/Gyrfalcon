@@ -1,0 +1,103 @@
+{
+  "chunks": 20000,
+  "concurrent": [
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 4,
+      "p50_ms": 2743.9580499999997,
+      "p99_ms": 3051.98948,
+      "qps": 1.454788844580956
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 16,
+      "p50_ms": 10912.046649,
+      "p99_ms": 11536.004619,
+      "qps": 1.4593348409750861
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 32,
+      "p50_ms": 22673.583701,
+      "p99_ms": 23976.531011,
+      "qps": 1.404126796871293
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 384,
+    "git_revision": "7e4050ed079baced920eaff0b7f2eee33018f229",
+    "model_id": "BAAI/bge-small-en-v1.5",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "fallback_pct": {
+    "1024": 0.0,
+    "128": 0.0,
+    "256": 0.0,
+    "512": 0.0,
+    "64": 100.0,
+    "exact": 0.0
+  },
+  "rerank": true,
+  "segment_count": 1,
+  "single_flight": {
+    "fallback_pct": {
+      "1024": 0.0,
+      "128": 0.0,
+      "256": 0.0,
+      "512": 0.0,
+      "64": 100.0,
+      "exact": 0.0
+    },
+    "in_flight": 1,
+    "p50_ms": 697.336555,
+    "p99_ms": 877.2424920000001,
+    "qps": 1.4301617185101987
+  },
+  "time_to_request": {
+    "columns": [
+      {
+        "fallback_pct": {},
+        "in_flight": 1,
+        "p50_ms": 727.636249,
+        "p99_ms": 935.3061759999999,
+        "qps": 1.3657043156158952
+      },
+      {
+        "fallback_pct": {},
+        "in_flight": 16,
+        "p50_ms": 11963.091512,
+        "p99_ms": 13007.517740000001,
+        "qps": 1.3330111116844718
+      }
+    ],
+    "llm": "discarded"
+  },
+  "timed": 200,
+  "tombstone_count": 0,
+  "warmup": 20
+}
