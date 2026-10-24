@@ -120,7 +120,7 @@ mod tests {
         let separator = Regex::new(r"[^\p{L}\p{M}\p{N}]+").unwrap();
         let mut tokens = Vec::new();
         let mut start = 0;
-        let mut push = |from: usize, to: usize, tokens: &mut Vec<Token>| {
+        let push = |from: usize, to: usize, tokens: &mut Vec<Token>| {
             let piece = &text[from..to];
             if piece.is_empty() || piece.chars().count() > MAX_TOKEN_CHARS {
                 return;

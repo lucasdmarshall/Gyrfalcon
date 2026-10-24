@@ -25,6 +25,7 @@ mod static_embed;
 mod store;
 mod tombstone;
 mod vector;
+mod wordpiece;
 
 pub use answer::{
     complete, fill_answer_prompt, fill_judge_prompt, AnswerEvent, AnswerOptions, AnswerStream, ChatConfig,

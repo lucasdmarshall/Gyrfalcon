@@ -8,7 +8,9 @@ use tokenizers::Tokenizer;
 use crate::embed::Embedder;
 use crate::error::{Error, Result};
 
-/// Tokens per text, as in Model2Vec's default `max_length`.
+/// Model2Vec's default `max_length`. Like the `model2vec` package, a text is cut to
+/// `max_length * median_token_length` characters, tokenized, truncated to `max_length` ids
+/// (unknown tokens included), and the ids other than `[UNK]` are pooled.
 pub const STATIC_MAX_TOKENS: usize = 512;
 
 fn model_error(err: impl std::fmt::Display) -> Error {
@@ -18,6 +20,10 @@ fn model_error(err: impl std::fmt::Display) -> Error {
 /// A Model2Vec model directory: `config.json`, `model.safetensors`, `tokenizer.json`.
 pub struct StaticEmbedder {
     tokenizer: Tokenizer,
+    /// Allocation-free path for BERT WordPiece tokenizers; `None` uses `tokenizer` alone.
+    fast: Option<crate::wordpiece::FastWordPiece>,
+    /// Characters kept per text: `STATIC_MAX_TOKENS * median vocabulary token length`.
+    max_chars: usize,
     /// Row-major `[vocab, dimension]`.
     table: Vec<f32>,
     dimension: usize,
@@ -119,13 +125,56 @@ impl StaticEmbedder {
             return Err(model_error("embeddings tensor size does not match its shape"));
         }
         let unk_id = tokenizer.token_to_id("[UNK]");
-        Ok(StaticEmbedder { tokenizer, table, dimension: shape[1], normalize, unk_id, model_id: model_id.into() })
+        let json: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("tokenizer.json"))?)?;
+        let fast = crate::wordpiece::FastWordPiece::from_tokenizer_json(&json);
+        // `int(np.median([len(token) for token in tokens]))`, lengths in characters.
+        let mut lengths: Vec<usize> = tokenizer.get_vocab(true).keys().map(|t| t.chars().count()).collect();
+        lengths.sort_unstable();
+        let median = match lengths.len() {
+            0 => 1,
+            n if n % 2 == 1 => lengths[n / 2],
+            n => (lengths[n / 2 - 1] + lengths[n / 2]) / 2,
+        };
+        Ok(StaticEmbedder {
+            tokenizer,
+            fast,
+            max_chars: STATIC_MAX_TOKENS * median.max(1),
+            table,
+            dimension: shape[1],
+            normalize,
+            unk_id,
+            model_id: model_id.into(),
+        })
+    }
+
+    /// Token ids of `text` as `model2vec` computes them: cut to `max_chars` characters,
+    /// tokenized without special tokens, truncated to `STATIC_MAX_TOKENS` ids.
+    pub fn token_ids(&self, text: &str) -> Result<Vec<u32>> {
+        let cut = match text.char_indices().nth(self.max_chars) {
+            Some((at, _)) => &text[..at],
+            None => text,
+        };
+        let mut ids = Vec::with_capacity(cut.len() / 4);
+        match &self.fast {
+            Some(fast) => fast
+                .encode(cut, &self.tokenizer, &mut ids, STATIC_MAX_TOKENS)
+                .map_err(|e| Error::Embed(e.to_string()))?,
+            None => ids.extend_from_slice(
+                self.tokenizer.encode(cut, false).map_err(|e| Error::Embed(e.to_string()))?.get_ids(),
+            ),
+        }
+        ids.truncate(STATIC_MAX_TOKENS);
+        Ok(ids)
+    }
+
+    fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
+        Ok(self.pool(&self.token_ids(text)?))
     }
 
     fn pool(&self, ids: &[u32]) -> Vec<f32> {
         let mut out = vec![0f32; self.dimension];
         let mut count = 0usize;
-        for id in ids.iter().filter(|id| Some(**id) != self.unk_id).take(STATIC_MAX_TOKENS) {
+        for id in ids.iter().filter(|id| Some(**id) != self.unk_id) {
             let start = *id as usize * self.dimension;
             let Some(row) = self.table.get(start..start + self.dimension) else { continue };
             for (o, v) in out.iter_mut().zip(row) {
@@ -148,9 +197,22 @@ impl StaticEmbedder {
 
 impl Embedder for StaticEmbedder {
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        let inputs: Vec<&str> = texts.iter().map(String::as_str).collect();
-        let encodings = self.tokenizer.encode_batch(inputs, false).map_err(|e| Error::Embed(e.to_string()))?;
-        Ok(encodings.iter().map(|e| self.pool(e.get_ids())).collect())
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        if texts.len() < 64 || threads == 1 {
+            return texts.iter().map(|t| self.embed_one(t)).collect();
+        }
+        let per_thread = texts.len().div_ceil(threads);
+        std::thread::scope(|scope| {
+            let parts: Vec<_> = texts
+                .chunks(per_thread)
+                .map(|part| scope.spawn(move || part.iter().map(|t| self.embed_one(t)).collect::<Result<Vec<_>>>()))
+                .collect();
+            let mut out = Vec::with_capacity(texts.len());
+            for part in parts {
+                out.extend(part.join().map_err(|_| Error::Embed("static embed thread panicked".into()))??);
+            }
+            Ok(out)
+        })
     }
 
     fn model_id(&self) -> &str {
