@@ -450,6 +450,11 @@ impl Index {
         self.embedder = Arc::from(embedder);
     }
 
+    /// The embedder this index uses for ingest and queries.
+    pub fn embedder(&self) -> Arc<dyn Embedder> {
+        self.embedder.clone()
+    }
+
     pub fn set_reranker(&mut self, reranker: Box<dyn Reranker>) {
         self.reranker = Arc::from(reranker);
     }

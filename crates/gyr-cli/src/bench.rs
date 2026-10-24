@@ -61,6 +61,23 @@ pub enum BenchCommand {
         #[command(flatten)]
         model: ModelArgs,
     },
+    /// Embedder throughput on fixture chunks and single-query latency, without indexing.
+    Embed {
+        #[arg(long, default_value = "bench/fixtures/text-only")]
+        fixture: PathBuf,
+        /// Chunks to embed for the throughput figure.
+        #[arg(long, default_value_t = 2000)]
+        chunks: usize,
+        #[arg(long, default_value_t = 32)]
+        batch: usize,
+        /// Questions to embed one at a time for the latency figure.
+        #[arg(long, default_value_t = 500)]
+        queries: usize,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        model: ModelArgs,
+    },
     /// File bytes and RSS of a synthetic collection.
     Ram {
         #[arg(long, default_value_t = 1_000_000)]
@@ -435,6 +452,45 @@ fn bench_ram(vectors: usize, model: &ModelArgs) -> Result<Value, Error> {
     Ok(Value::Object(report))
 }
 
+fn bench_embed(fixture: &Path, chunks: usize, batch: usize, queries: usize, model: &ModelArgs) -> Result<Value, Error> {
+    let dir = tempfile::tempdir()?;
+    let index = model.open(&dir.path().join("collection"), true)?;
+    let texts: Vec<String> = jsonl(&fixture.join("chunks.jsonl"))?
+        .iter()
+        .filter_map(|c| c["text"].as_str().map(|t| gyrfalcon::prepare(t).embed_text))
+        .filter(|t| !t.is_empty())
+        .take(chunks)
+        .collect();
+    let questions: Vec<String> = jsonl(&fixture.join("questions.jsonl"))?
+        .iter()
+        .filter_map(|q| q["query"].as_str().map(str::to_string))
+        .take(queries)
+        .collect();
+    let embedder = index.embedder();
+    let started = Instant::now();
+    for part in texts.chunks(batch.max(1)) {
+        embedder.embed(part)?;
+    }
+    let seconds = started.elapsed().as_secs_f64();
+    let mut millis = Vec::with_capacity(questions.len());
+    for question in &questions {
+        let started = Instant::now();
+        embedder.embed(std::slice::from_ref(question))?;
+        millis.push(started.elapsed().as_secs_f64() * 1000.0);
+    }
+    let column = LatencyColumn::from_samples(1, millis, 0.0, &[]);
+    Ok(json!({
+        "environment": BenchEnvironment::detect(index.config()),
+        "chunks": texts.len(),
+        "batch": batch,
+        "chunks_per_sec": texts.len() as f64 / seconds,
+        "mean_chunk_bytes": texts.iter().map(String::len).sum::<usize>() as f64 / texts.len().max(1) as f64,
+        "query_p50_ms": column.p50_ms,
+        "query_p99_ms": column.p99_ms,
+        "queries": questions.len(),
+    }))
+}
+
 fn read_json(path: &Path) -> Result<Value, Error> {
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)
 }
@@ -640,6 +696,9 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
         }
         BenchCommand::Ingest { files, chunks_per_file, out, model } => {
             emit(&bench_ingest(files, chunks_per_file, &model)?, out.as_deref())
+        }
+        BenchCommand::Embed { fixture, chunks, batch, queries, out, model } => {
+            emit(&bench_embed(&fixture, chunks, batch, queries, &model)?, out.as_deref())
         }
         BenchCommand::Ram { vectors, out, model } => emit(&bench_ram(vectors, &model)?, out.as_deref()),
         BenchCommand::Accuracy {

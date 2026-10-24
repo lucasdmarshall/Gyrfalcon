@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use gyrfalcon::{
     AnswerEvent, AnswerOptions, ChatConfig, Document, Embedder, Error, HashEmbedder, HttpEmbedder, IncompatibleField,
-    Index, IndexConfig, OrtModel, OrtReranker, Quantization, RetrieveOptions, SessionEmbedder,
+    Index, IndexConfig, OrtModel, OrtReranker, Quantization, RetrieveOptions, SessionEmbedder, StaticEmbedder,
 };
 
 #[derive(Parser)]
@@ -75,6 +75,8 @@ pub enum EmbedderKind {
     Hash,
     /// OpenAI-compatible embeddings endpoint from --embed-url.
     Http,
+    /// Static Model2Vec model from --model-dir (model.safetensors, tokenizer.json).
+    Static,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -92,8 +94,9 @@ pub struct ModelArgs {
     /// Defaults to BAAI/bge-small-en-v1.5, or gyr-hash for the hash embedder.
     #[arg(long, env = "GYR_MODEL_ID")]
     pub model_id: Option<String>,
-    #[arg(long, default_value_t = gyrfalcon::DEFAULT_DIMENSION)]
-    pub dimension: u32,
+    /// Defaults to the static model's width, else 384.
+    #[arg(long)]
+    pub dimension: Option<u32>,
     #[arg(long, default_value = "i8", value_parser = parse_quantization)]
     pub quantization: Quantization,
     #[arg(long, env = "GYR_CHAT_ENDPOINT")]
@@ -111,11 +114,19 @@ impl ModelArgs {
     pub fn config(&self) -> IndexConfig {
         let model_id = self.model_id.clone().unwrap_or_else(|| match self.embedder {
             EmbedderKind::Hash => "gyr-hash".to_string(),
+            EmbedderKind::Static => gyrfalcon::STATIC_MODEL_ID.to_string(),
             _ => gyrfalcon::DEFAULT_MODEL_ID.to_string(),
+        });
+        let dimension = self.dimension.unwrap_or_else(|| match (self.embedder, &self.model_dir) {
+            // Reads only the safetensors header; the table loads after the open gate.
+            (EmbedderKind::Static, Some(dir)) => {
+                StaticEmbedder::read_dimension(dir).unwrap_or(gyrfalcon::DEFAULT_DIMENSION)
+            }
+            _ => gyrfalcon::DEFAULT_DIMENSION,
         });
         IndexConfig {
             model_id,
-            dimension: self.dimension,
+            dimension,
             quantization: self.quantization,
             analyzer_id: gyrfalcon::ANALYZER_ID.to_string(),
         }
@@ -145,6 +156,12 @@ impl ModelArgs {
                     Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the ort embedder".into())
                 })?;
                 Box::new(SessionEmbedder::new(OrtModel::load(model_dir)?, config.model_id.clone()))
+            }
+            EmbedderKind::Static => {
+                let model_dir = self.model_dir.as_ref().ok_or_else(|| {
+                    Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the static embedder".into())
+                })?;
+                Box::new(StaticEmbedder::from_dir(model_dir, config.model_id.clone())?)
             }
             EmbedderKind::Http => {
                 let url = self

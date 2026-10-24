@@ -9,6 +9,8 @@ pub const FORMAT_VERSION: u32 = 1;
 pub const ANALYZER_ID: &str = "gyr-text-v1";
 pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-small-en-v1.5";
 pub const DEFAULT_DIMENSION: u32 = 384;
+/// The static (Model2Vec) embedder of the lite tier.
+pub const STATIC_MODEL_ID: &str = "minishlab/potion-base-8M";
 pub const DEFAULT_RERANKER_ID: &str = "Xenova/ms-marco-MiniLM-L-6-v2";
 pub const SEGMENTS_PER_TIER: u32 = 8;
 pub const MAX_MERGE_CHUNKS: u64 = 100_000;
