@@ -15,7 +15,7 @@ use gyrfalcon::bench::{
 };
 use gyrfalcon::{
     complete, fill_answer_prompt, fill_judge_prompt, AnswerEvent, AnswerOptions, ChatConfig, Document, Error,
-    FallbackStep, HashEmbedder, Hit, Index, RetrieveOptions, ANSWER_PROMPT,
+    FallbackStep, Fusion, HashEmbedder, Hit, Index, RetrieveOptions, ANSWER_PROMPT,
 };
 use serde_json::{json, Value};
 
@@ -56,6 +56,26 @@ pub enum BenchCommand {
         files: usize,
         #[arg(long, default_value_t = 10_000)]
         chunks_per_file: usize,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        model: ModelArgs,
+    },
+    /// BEIR datasets: nDCG@10, recall@100, and MRR@10 comparable with BEIR and MTEB numbers.
+    Beir {
+        /// Dataset directories with corpus.jsonl, queries.jsonl, and qrels/{split}.tsv.
+        #[arg(long, num_args = 1.., required = true)]
+        dataset: Vec<PathBuf>,
+        #[arg(long, default_value = "test")]
+        split: String,
+        /// Fusions to score on the same index: configured, rrf, lexical, dense, score:W, rescore:W.
+        #[arg(long, value_delimiter = ',', default_value = "configured")]
+        fusions: Vec<String>,
+        /// Ranked documents kept per query.
+        #[arg(long, default_value_t = 100)]
+        depth: usize,
+        #[arg(long)]
+        rerank: bool,
         #[arg(long)]
         out: Option<PathBuf>,
         #[command(flatten)]
@@ -452,6 +472,114 @@ fn bench_ram(vectors: usize, model: &ModelArgs) -> Result<Value, Error> {
     Ok(Value::Object(report))
 }
 
+/// `[lexical, dense]` RRF weights and fusion for one `--fusions` entry.
+fn parse_fusion(spec: &str, configured: Fusion) -> Result<([f32; 2], Fusion), Error> {
+    let weight = |text: &str| text.parse::<f32>().map_err(|_| other(format!("bad fusion weight in {spec}")));
+    Ok(match spec.split_once(':') {
+        None if spec == "configured" => ([1.0, 1.0], configured),
+        None if spec == "rrf" => ([1.0, 1.0], Fusion::Rrf),
+        None if spec == "lexical" => ([1.0, 0.0], Fusion::Rrf),
+        None if spec == "dense" => ([0.0, 1.0], Fusion::Rrf),
+        Some(("score", w)) => ([1.0, 1.0], Fusion::Score { dense_weight: weight(w)? }),
+        Some(("rescore", w)) => ([1.0, 1.0], Fusion::Rescore { dense_weight: weight(w)? }),
+        _ => return Err(other(format!("unknown fusion {spec}"))),
+    })
+}
+
+fn bench_beir(
+    datasets: &[PathBuf],
+    split: &str,
+    fusions: &[String],
+    depth: usize,
+    rerank: bool,
+    model: &ModelArgs,
+) -> Result<Value, Error> {
+    let mut results = Vec::new();
+    let mut environment = None;
+    for dataset in datasets {
+        let name = dataset.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let mut qrels: HashMap<String, gyrfalcon::bench::Qrels> = HashMap::new();
+        for line in std::fs::read_to_string(dataset.join("qrels").join(format!("{split}.tsv")))?.lines().skip(1) {
+            let mut fields = line.split('\t');
+            if let (Some(query), Some(doc), Some(score)) = (fields.next(), fields.next(), fields.next()) {
+                let score: i64 = score.trim().parse().unwrap_or(0);
+                qrels.entry(query.to_string()).or_default().insert(doc.to_string(), score);
+            }
+        }
+        let docs: Vec<Document> = jsonl(&dataset.join("corpus.jsonl"))?
+            .iter()
+            .map(|doc| {
+                let title = doc["title"].as_str().unwrap_or_default().trim();
+                let text = doc["text"].as_str().unwrap_or_default();
+                let body = if title.is_empty() { text.to_string() } else { format!("{title}\n\n{text}") };
+                Document::body(doc["_id"].as_str().unwrap_or_default(), body)
+            })
+            .collect();
+        let mut queries: Vec<(String, String)> = jsonl(&dataset.join("queries.jsonl"))?
+            .iter()
+            .filter_map(|q| Some((q["_id"].as_str()?.to_string(), q["text"].as_str()?.to_string())))
+            .filter(|(id, _)| qrels.contains_key(id))
+            .collect();
+        queries.sort();
+
+        let dir = tempfile::tempdir()?;
+        let mut index = model.open(&dir.path().join("collection"), true)?;
+        let started = Instant::now();
+        for batch in docs.chunks(10_000) {
+            index.index_sections(batch)?;
+        }
+        index.wait_until_merge_idle();
+        let index_seconds = started.elapsed().as_secs_f64();
+        environment.get_or_insert_with(|| BenchEnvironment::detect(index.config()));
+        let configured = index.fusion;
+        let mut rows = Vec::new();
+        for spec in fusions {
+            let (weights, fusion) = parse_fusion(spec, configured)?;
+            index.rrf_weights = weights;
+            index.fusion = fusion;
+            let (mut ndcg, mut recall, mut mrr) = (0.0, 0.0, 0.0);
+            let mut millis = Vec::with_capacity(queries.len());
+            for (id, text) in &queries {
+                let started = Instant::now();
+                let hits = index.retrieve(text, RetrieveOptions { rerank, limit: depth })?;
+                millis.push(started.elapsed().as_secs_f64() * 1000.0);
+                // BEIR and MTEB ignore a retrieved document whose id is the query id (ArguAna).
+                let ranked: Vec<String> =
+                    gyrfalcon::bench::dedupe_doc_keys(&hits.hits.iter().map(|h| h.doc_id.clone()).collect::<Vec<_>>())
+                        .into_iter()
+                        .filter(|doc| doc != id)
+                        .collect();
+                let judged = &qrels[id];
+                ndcg += gyrfalcon::bench::ndcg_at(&ranked, judged, 10);
+                recall += gyrfalcon::bench::recall_at(&ranked, judged, 100);
+                mrr += gyrfalcon::bench::mrr_at(&ranked, judged, 10);
+            }
+            let n = queries.len().max(1) as f64;
+            let latency = LatencyColumn::from_samples(1, millis, 0.0, &[]);
+            rows.push(json!({
+                "fusion": spec,
+                "ndcg_at_10": ndcg / n,
+                "recall_at_100": recall / n,
+                "mrr_at_10": mrr / n,
+                "query_p50_ms": latency.p50_ms,
+                "query_p99_ms": latency.p99_ms,
+            }));
+            eprintln!("{name} {spec}: nDCG@10 {:.4}", ndcg / n);
+        }
+        results.push(json!({
+            "dataset": name,
+            "split": split,
+            "docs": docs.len(),
+            "queries": queries.len(),
+            "index_seconds": index_seconds,
+            "docs_per_sec": docs.len() as f64 / index_seconds,
+            "rerank": rerank,
+            "results": rows,
+        }));
+    }
+    Ok(json!({ "environment": environment, "datasets": results }))
+}
+
 fn bench_embed(fixture: &Path, chunks: usize, batch: usize, queries: usize, model: &ModelArgs) -> Result<Value, Error> {
     let dir = tempfile::tempdir()?;
     let index = model.open(&dir.path().join("collection"), true)?;
@@ -696,6 +824,9 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
         }
         BenchCommand::Ingest { files, chunks_per_file, out, model } => {
             emit(&bench_ingest(files, chunks_per_file, &model)?, out.as_deref())
+        }
+        BenchCommand::Beir { dataset, split, fusions, depth, rerank, out, model } => {
+            emit(&bench_beir(&dataset, &split, &fusions, depth, rerank, &model)?, out.as_deref())
         }
         BenchCommand::Embed { fixture, chunks, batch, queries, out, model } => {
             emit(&bench_embed(&fixture, chunks, batch, queries, &model)?, out.as_deref())

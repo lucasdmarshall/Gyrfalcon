@@ -325,3 +325,18 @@ fn accuracy_prepare_run_adapters_and_compare() {
     // Same "none" generator and judge on every report, so the answer table is present.
     assert_eq!(table["answer"]["rows"].as_array().unwrap().len(), 4);
 }
+
+#[test]
+fn beir_metrics_match_hand_values() {
+    use gyrfalcon::bench::{mrr_at, ndcg_at, recall_at, Qrels};
+    let qrels: Qrels = [("a".to_string(), 2), ("b".to_string(), 1), ("z".to_string(), 0)].into_iter().collect();
+    let ranked: Vec<String> = ["x", "b", "a"].map(String::from).to_vec();
+    // DCG = 1/log2(3) + 2/log2(4); IDCG = 2/log2(2) + 1/log2(3).
+    let dcg = 1.0 / 3f64.log2() + 2.0 / 2.0;
+    let idcg = 2.0 + 1.0 / 3f64.log2();
+    assert!((ndcg_at(&ranked, &qrels, 10) - dcg / idcg).abs() < 1e-12);
+    assert_eq!(recall_at(&ranked, &qrels, 2), 0.5);
+    assert_eq!(recall_at(&ranked, &qrels, 100), 1.0);
+    assert_eq!(mrr_at(&ranked, &qrels, 10), 0.5);
+    assert_eq!(ndcg_at(&["a".to_string(), "b".to_string()], &qrels, 10), 1.0);
+}

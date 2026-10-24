@@ -418,3 +418,41 @@ pub fn compare_accuracy(reports: &[AccuracyReport]) -> Result<AccuracyComparison
     }
     Ok(AccuracyComparison { retrieval: Some(retrieval), answer, json })
 }
+
+/// Graded relevance of one query: document id to gain. Gains of 0 or less are not relevant.
+pub type Qrels = std::collections::HashMap<String, i64>;
+
+/// nDCG@k with linear gains and `log2(rank + 1)` discounts, as `pytrec_eval` computes it for
+/// BEIR and MTEB.
+pub fn ndcg_at(ranked: &[String], qrels: &Qrels, k: usize) -> f64 {
+    let gain = |id: &String| qrels.get(id).copied().unwrap_or(0).max(0) as f64;
+    let dcg: f64 = ranked.iter().take(k).enumerate().map(|(i, id)| gain(id) / ((i + 2) as f64).log2()).sum();
+    let mut ideal: Vec<f64> = qrels.values().map(|g| (*g).max(0) as f64).filter(|g| *g > 0.0).collect();
+    ideal.sort_by(|a, b| b.total_cmp(a));
+    let idcg: f64 = ideal.iter().take(k).enumerate().map(|(i, g)| g / ((i + 2) as f64).log2()).sum();
+    if idcg > 0.0 {
+        dcg / idcg
+    } else {
+        0.0
+    }
+}
+
+/// Share of relevant documents found in the top `k`.
+pub fn recall_at(ranked: &[String], qrels: &Qrels, k: usize) -> f64 {
+    let relevant = qrels.values().filter(|g| **g > 0).count();
+    if relevant == 0 {
+        return 0.0;
+    }
+    let found = ranked.iter().take(k).filter(|id| qrels.get(*id).is_some_and(|g| *g > 0)).count();
+    found as f64 / relevant as f64
+}
+
+/// Reciprocal rank of the first relevant document within the top `k`.
+pub fn mrr_at(ranked: &[String], qrels: &Qrels, k: usize) -> f64 {
+    ranked
+        .iter()
+        .take(k)
+        .position(|id| qrels.get(id).is_some_and(|g| *g > 0))
+        .map(|at| 1.0 / (at + 1) as f64)
+        .unwrap_or(0.0)
+}
