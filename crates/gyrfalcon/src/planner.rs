@@ -133,44 +133,21 @@ impl Index {
         // Map chunk ids to document keys; this is also the stored-field read a retrieve does
         // for each hit it returns.
         let started = Instant::now();
-        let mut doc_of: HashMap<u64, (String, String)> = HashMap::new();
+        let mut doc_of: HashMap<u64, String> = HashMap::new();
         for id in &candidates {
             if let Some(hit) = hit_for(snapshot, *id, 0.0)? {
-                doc_of.insert(*id, (hit.doc_id, hit.body));
+                doc_of.insert(*id, hit.doc_id);
             }
         }
         timings.fetch_per_hit = ms(started) / candidates.len().max(1) as f64;
-        let doc = |id: &u64| doc_of.get(id).map(|(doc, _)| doc.clone()).unwrap_or_default();
-
-        let mut rerank_scores = HashMap::new();
-        if let Some((reranker, k)) = rerank {
-            let lexical_scores: Vec<(u64, f32)> = lexical.iter().map(|h| (h.chunk_id, h.score)).collect();
-            let exact: Vec<(u64, f32)> = exact_by_chunk.iter().map(|(id, s)| (*id, *s)).collect();
-            let mut pool: Vec<u64> = Vec::new();
-            let mut seen = HashSet::new();
-            for weight in TRACE_RERANK_WEIGHTS {
-                for (id, _) in score_fusion(&lexical_scores, &exact, weight).into_iter().take(k) {
-                    if seen.insert(id) {
-                        pool.push(id);
-                    }
-                }
-            }
-            let bodies: Vec<String> =
-                pool.iter().map(|id| doc_of.get(id).map(|(_, b)| b.clone()).unwrap_or_default()).collect();
-            let started = Instant::now();
-            let scores = reranker.rerank(query, &bodies)?;
-            timings.rerank_per_pair = ms(started) / pool.len().max(1) as f64;
-            for (id, score) in pool.iter().zip(scores) {
-                rerank_scores.insert(doc(id), score);
-            }
-        }
+        let doc = |id: &u64| doc_of.get(id).cloned().unwrap_or_default();
 
         let idf_max = prepared
             .tokens
             .iter()
             .map(|t| bm25_idf(snapshot.manifest.bm25_num_docs, snapshot.bm25.get(&t.text)))
             .fold(0.0, f32::max);
-        Ok(QueryTrace {
+        let mut trace = QueryTrace {
             features: QueryFeatures {
                 query_tokens: prepared.tokens.len(),
                 idf_max,
@@ -179,11 +156,41 @@ impl Index {
             lexical: lexical.iter().map(|h| (doc(&h.chunk_id), h.score)).collect(),
             dense: dense.ids.iter().zip(&dense.distances).map(|(id, d)| (doc(id), 1.0 - d)).collect(),
             exact: exact_by_chunk.iter().map(|(id, s)| (doc(id), *s)).collect(),
-            rerank: rerank_scores,
             chunks: candidates.iter().map(|id| (doc(id), *id)).collect(),
             timings,
             ..QueryTrace::default()
-        })
+        };
+        if let Some((reranker, k)) = rerank {
+            self.trace_rerank(&mut trace, query, reranker, k)?;
+        }
+        Ok(trace)
+    }
+
+    /// Scores the union of the fused top `k` under each of `TRACE_RERANK_WEIGHTS` with the
+    /// cross-encoder and records the cost per pair. Run it in a separate pass from
+    /// `trace_query`, so the cross-encoder does not cool the caches of the timed steps.
+    pub fn trace_rerank(&self, trace: &mut QueryTrace, query: &str, reranker: &dyn Reranker, k: usize) -> Result<()> {
+        let guard = self.acquire();
+        let snapshot = guard.snapshot();
+        let mut pool: Vec<String> = Vec::new();
+        let mut seen = HashSet::new();
+        for weight in TRACE_RERANK_WEIGHTS {
+            for doc in rescore_order(trace, weight).into_iter().take(k) {
+                if seen.insert(doc.clone()) {
+                    pool.push(doc);
+                }
+            }
+        }
+        let mut bodies = Vec::with_capacity(pool.len());
+        for doc in &pool {
+            let chunk = trace.chunks.get(doc).copied().unwrap_or(u64::MAX);
+            bodies.push(hit_for(snapshot, chunk, 0.0)?.map(|hit| hit.body).unwrap_or_default());
+        }
+        let started = Instant::now();
+        let scores = reranker.rerank(query, &bodies)?;
+        trace.timings.rerank_per_pair = ms(started) / pool.len().max(1) as f64;
+        trace.rerank = pool.into_iter().zip(scores).collect();
+        Ok(())
     }
 }
 

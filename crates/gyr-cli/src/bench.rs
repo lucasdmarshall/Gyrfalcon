@@ -646,26 +646,40 @@ fn bench_trace(
         }
         index.wait_until_merge_idle();
         eprintln!("{}: indexed {} docs in {:.0}s", set.name, set.docs.len(), started.elapsed().as_secs_f64());
-        let path = dir.join(format!("{}.jsonl", set.name));
-        let mut file = std::io::BufWriter::new(std::fs::File::create(&path)?);
-        let mut test_traces = Vec::new();
-        for (done, (split, id, text, qrels)) in set.queries.iter().enumerate() {
-            let mut trace = index.trace_query(text, depth, reranker)?;
+        // Pass 1: scores and step timings, with nothing else running between queries.
+        let mut traces = Vec::with_capacity(set.queries.len());
+        for (split, id, text, qrels) in &set.queries {
+            let mut trace = index.trace_query(text, depth, None)?;
             trace.dataset = set.name.clone();
             trace.split = split.clone();
             trace.query_id = id.clone();
             trace.qrels = qrels.clone();
-            serde_json::to_writer(&mut file, &trace)?;
-            file.write_all(b"\n")?;
-            if trace.split == "test" {
-                test_traces.push((text.clone(), trace));
-            }
-            if (done + 1) % 200 == 0 {
-                eprintln!("{}: traced {}/{} queries", set.name, done + 1, set.queries.len());
+            traces.push(trace);
+        }
+        let test_traces: Vec<(String, gyrfalcon::planner::QueryTrace)> = set
+            .queries
+            .iter()
+            .zip(&traces)
+            .filter(|(_, t)| t.split == "test")
+            .map(|((_, _, text, _), t)| (text.clone(), t.clone()))
+            .collect();
+        let verification = verify_replay(&mut index, &test_traces)?;
+        // Pass 2: cross-encoder scores.
+        if let Some((reranker, k)) = reranker {
+            for (done, ((_, _, text, _), trace)) in set.queries.iter().zip(traces.iter_mut()).enumerate() {
+                index.trace_rerank(trace, text, reranker, k)?;
+                if (done + 1) % 200 == 0 {
+                    eprintln!("{}: reranked {}/{} queries", set.name, done + 1, set.queries.len());
+                }
             }
         }
+        let path = dir.join(format!("{}.jsonl", set.name));
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&path)?);
+        for trace in &traces {
+            serde_json::to_writer(&mut file, trace)?;
+            file.write_all(b"\n")?;
+        }
         file.flush()?;
-        let verification = verify_replay(&mut index, &test_traces)?;
         written.push(json!({
             "dataset": set.name,
             "queries": set.queries.len(),
