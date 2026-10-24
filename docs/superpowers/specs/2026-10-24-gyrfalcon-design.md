@@ -562,3 +562,22 @@ Each reads `bench/fixtures/text-only/` produced by `gyr bench accuracy --prepare
 ## Worked example of one retrieve
 
 Collection manifest says `bge-small-en-v1.5`, dimension 384, `i8`, `gyr-text-v1`. The caller opens with that same config. `prepare("Memory safety in Rust")` runs once and yields the embed text with its original case and the tokens `memory`, `safety`, `in`, `rust`. Ort embeds those characters. Each Tantivy segment searches those four terms with the collection `Bm25StatisticsProvider`, and its collector skips dead chunk ids. Each USearch segment runs `filtered_search` with the same tombstone predicate. The lexical lists merge by BM25 score. The dense lists merge by distance. RRF fuses the two merged lists. With rerank off, `retrieve` returns. `answer` writes a chat-completion body that contains the top 5 bodies and then waits on the external model, which is outside the retrieve clock.
+
+## v2 changes (2026-10-24)
+
+Measured on Open RAG Bench text-only (1914 questions, 4-core VM). See
+`docs/superpowers/plans/2026-10-24-gyrfalcon-v2.md` and `bench/results/`.
+
+- Two tiers replace the single default model. `lite` (the CLI default) embeds with the static
+  Model2Vec model `minishlab/potion-retrieval-32M` (512 dimensions, no runtime, ~1,400
+  chunks/s on 4 cores). `full` embeds with `bge-small-en-v1.5` int8 ONNX through `ort`.
+  The open gate is unchanged: a collection keeps the model it was created with.
+- Default fusion is `Rescore`: every candidate from either leg gets its exact cosine from the
+  stored vector, then `(1 - w) * minmax(bm25) + w * minmax(cosine)`. `w` is 0.2 for `lite`
+  and 0.3 for `full`. RRF stays available as `--fusion rrf`; with a weak dense leg it ranked
+  below BM25 alone (MRR 0.563 vs 0.740), while rescore reached 0.752 (`lite`) and 0.773
+  (`full`).
+- Rescore reads stored vectors through USearch, so int8 retrieve still leaves `vectors.bin`
+  unmapped.
+- A viewed USearch index reserves 64 search slots; searches beyond that wait instead of
+  failing.

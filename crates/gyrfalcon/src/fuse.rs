@@ -3,6 +3,8 @@
 pub const RRF_K: f32 = 60.0;
 pub const LEXICAL_WEIGHT: f32 = 1.0;
 pub const DENSE_WEIGHT: f32 = 1.0;
+/// Default dense share of `Fusion::Rescore`, chosen on Open RAG Bench (see the v2 plan).
+pub const RESCORE_DENSE_WEIGHT: f32 = 0.2;
 
 /// Sums `weight / (60 + rank)` over both legs, rank starting at 1. A hit missing from a leg
 /// adds 0. Sorted by score descending, then chunk id ascending.
@@ -28,10 +30,9 @@ pub fn rrf_weighted(lexical: &[u64], dense: &[u64], weights: [f32; 2]) -> Vec<(u
 }
 
 /// How the two ranked legs become one list.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Fusion {
-    /// Reciprocal rank fusion with `Index::rrf_weights` (the spec default).
-    #[default]
+    /// Reciprocal rank fusion with `Index::rrf_weights` (the v1 spec default).
     Rrf,
     /// Min-max normalized BM25 and cosine similarity, mixed as
     /// `(1 - dense_weight) * bm25 + dense_weight * cosine`. A hit missing from a leg scores 0
@@ -40,6 +41,12 @@ pub enum Fusion {
     /// `Score`, but every candidate from either leg gets its exact cosine similarity from the
     /// stored vector, so a lexical-only hit is not penalized on the dense side.
     Rescore { dense_weight: f32 },
+}
+
+impl Default for Fusion {
+    fn default() -> Self {
+        Fusion::Rescore { dense_weight: RESCORE_DENSE_WEIGHT }
+    }
 }
 
 fn min_max(values: &mut [(u64, f32)]) {

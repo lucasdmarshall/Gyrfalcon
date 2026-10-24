@@ -296,7 +296,7 @@ pub struct Index {
     pub testing_starve_hnsw: bool,
     /// RRF weights `[lexical, dense]`. The spec default is `[1, 1]`.
     pub rrf_weights: [f32; 2],
-    /// How retrieve combines the legs. RRF unless set.
+    /// How retrieve combines the legs. Rescore with dense weight 0.2 unless set.
     pub fusion: crate::fuse::Fusion,
     pub(crate) last_report: IndexReport,
     _lock: WriterLock,
@@ -411,7 +411,7 @@ impl Index {
             seal_every: SEAL_EVERY,
             testing_starve_hnsw: false,
             rrf_weights: [crate::fuse::LEXICAL_WEIGHT, crate::fuse::DENSE_WEIGHT],
-            fusion: crate::fuse::Fusion::Rrf,
+            fusion: crate::fuse::Fusion::Rescore { dense_weight: crate::fuse::RESCORE_DENSE_WEIGHT },
             auto_merge: true,
             pause_merge_after_copy: false,
             deleter_fail_times: 0,

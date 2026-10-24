@@ -87,11 +87,52 @@ pub enum FusionKind {
     Rescore,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Tier {
+    /// Static potion-retrieval-32M embeddings and rescore fusion: fast on any CPU.
+    Lite,
+    /// int8 bge-small-en-v1.5 through ONNX Runtime and rescore fusion: best quality.
+    Full,
+}
+
+/// What a tier resolves to when no flag overrides it.
+struct TierDefaults {
+    embedder: EmbedderKind,
+    model_dir: &'static str,
+    model_id: &'static str,
+    dense_alpha: f32,
+}
+
+impl Tier {
+    fn defaults(self) -> TierDefaults {
+        match self {
+            Tier::Lite => TierDefaults {
+                embedder: EmbedderKind::Static,
+                model_dir: "potion-retrieval-32M",
+                model_id: gyrfalcon::STATIC_MODEL_ID,
+                dense_alpha: 0.2,
+            },
+            Tier::Full => TierDefaults {
+                embedder: EmbedderKind::Ort,
+                model_dir: "bge-small-en-v1.5-q8",
+                model_id: "Xenova/bge-small-en-v1.5-q8",
+                dense_alpha: 0.3,
+            },
+        }
+    }
+}
+
 #[derive(Args, Clone, Debug)]
 pub struct ModelArgs {
-    #[arg(long, value_enum, env = "GYR_EMBEDDER", default_value = "ort")]
-    pub embedder: EmbedderKind,
-    /// Directory with model.onnx and tokenizer.json for the embedder.
+    /// Model and fusion preset. Every other flag overrides it.
+    #[arg(long, value_enum, env = "GYR_TIER", default_value = "lite")]
+    pub tier: Tier,
+    /// Directory the tier models live under, one subdirectory per model.
+    #[arg(long, env = "GYR_MODELS", default_value = ".models")]
+    pub models: PathBuf,
+    #[arg(long, value_enum, env = "GYR_EMBEDDER")]
+    pub embedder: Option<EmbedderKind>,
+    /// Model directory for the embedder; defaults to the tier's model under --models.
     #[arg(long, env = "GYR_MODEL_DIR")]
     pub model_dir: Option<PathBuf>,
     /// Directory with model.onnx and tokenizer.json for the cross-encoder reranker.
@@ -99,7 +140,7 @@ pub struct ModelArgs {
     pub reranker_dir: Option<PathBuf>,
     #[arg(long, env = "GYR_EMBED_URL")]
     pub embed_url: Option<String>,
-    /// Defaults to BAAI/bge-small-en-v1.5, or gyr-hash for the hash embedder.
+    /// Defaults to the tier's model id, or gyr-hash for the hash embedder.
     #[arg(long, env = "GYR_MODEL_ID")]
     pub model_id: Option<String>,
     /// Defaults to the static model's width, else 384.
@@ -114,11 +155,11 @@ pub struct ModelArgs {
     #[arg(long, default_value_t = 1.0)]
     pub dense_weight: f32,
     /// How retrieve combines BM25 and dense: rrf, score, or rescore.
-    #[arg(long, value_enum, default_value = "rrf")]
+    #[arg(long, value_enum, default_value = "rescore")]
     pub fusion: FusionKind,
-    /// Dense share for --fusion score or rescore, in [0, 1].
-    #[arg(long, default_value_t = 0.3)]
-    pub dense_alpha: f32,
+    /// Dense share for --fusion score or rescore, in [0, 1]; defaults to the tier's.
+    #[arg(long)]
+    pub dense_alpha: Option<f32>,
     #[arg(long, env = "GYR_CHAT_ENDPOINT")]
     pub chat_endpoint: Option<String>,
     #[arg(long, env = "GYR_CHAT_MODEL", default_value = "default")]
@@ -130,17 +171,44 @@ fn parse_quantization(value: &str) -> Result<Quantization, String> {
 }
 
 impl ModelArgs {
-    /// The process config every open compares against.
-    pub fn config(&self) -> IndexConfig {
-        let model_id = self.model_id.clone().unwrap_or_else(|| match self.embedder {
+    pub fn embedder(&self) -> EmbedderKind {
+        self.embedder.unwrap_or(self.tier.defaults().embedder)
+    }
+
+    /// An explicit --model-dir, else the tier's model when the tier's embedder is in use.
+    pub fn model_dir(&self) -> Option<PathBuf> {
+        let defaults = self.tier.defaults();
+        self.model_dir
+            .clone()
+            .or_else(|| (self.embedder() == defaults.embedder).then(|| self.models.join(defaults.model_dir)))
+    }
+
+    pub fn model_id(&self) -> String {
+        let defaults = self.tier.defaults();
+        self.model_id.clone().unwrap_or_else(|| match self.embedder() {
             EmbedderKind::Hash => "gyr-hash".to_string(),
+            kind if kind == defaults.embedder && self.model_dir.is_none() => defaults.model_id.to_string(),
             EmbedderKind::Static => gyrfalcon::STATIC_MODEL_ID.to_string(),
             _ => gyrfalcon::DEFAULT_MODEL_ID.to_string(),
-        });
-        let dimension = self.dimension.unwrap_or_else(|| match (self.embedder, &self.model_dir) {
+        })
+    }
+
+    pub fn fusion(&self) -> Fusion {
+        let dense_weight = self.dense_alpha.unwrap_or(self.tier.defaults().dense_alpha);
+        match self.fusion {
+            FusionKind::Rrf => Fusion::Rrf,
+            FusionKind::Score => Fusion::Score { dense_weight },
+            FusionKind::Rescore => Fusion::Rescore { dense_weight },
+        }
+    }
+
+    /// The process config every open compares against.
+    pub fn config(&self) -> IndexConfig {
+        let model_id = self.model_id();
+        let dimension = self.dimension.unwrap_or_else(|| match (self.embedder(), self.model_dir()) {
             // Reads only the safetensors header; the table loads after the open gate.
             (EmbedderKind::Static, Some(dir)) => {
-                StaticEmbedder::read_dimension(dir).unwrap_or(gyrfalcon::DEFAULT_DIMENSION)
+                StaticEmbedder::read_dimension(&dir).unwrap_or(gyrfalcon::DEFAULT_DIMENSION)
             }
             _ => gyrfalcon::DEFAULT_DIMENSION,
         });
@@ -169,16 +237,17 @@ impl ModelArgs {
         } else {
             Index::open(dir, &config)?
         };
-        let embedder: Box<dyn Embedder> = match self.embedder {
+        let model_dir = self.model_dir();
+        let embedder: Box<dyn Embedder> = match self.embedder() {
             EmbedderKind::Hash => Box::new(HashEmbedder::new(config.dimension)),
             EmbedderKind::Ort => {
-                let model_dir = self.model_dir.as_ref().ok_or_else(|| {
+                let model_dir = model_dir.as_ref().ok_or_else(|| {
                     Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the ort embedder".into())
                 })?;
                 Box::new(SessionEmbedder::new(OrtModel::load(model_dir)?, config.model_id.clone()))
             }
             EmbedderKind::Static => {
-                let model_dir = self.model_dir.as_ref().ok_or_else(|| {
+                let model_dir = model_dir.as_ref().ok_or_else(|| {
                     Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the static embedder".into())
                 })?;
                 Box::new(StaticEmbedder::from_dir(model_dir, config.model_id.clone())?)
@@ -200,11 +269,7 @@ impl ModelArgs {
         }
         index.set_embedder(embedder);
         index.rrf_weights = [self.lexical_weight, self.dense_weight];
-        index.fusion = match self.fusion {
-            FusionKind::Rrf => Fusion::Rrf,
-            FusionKind::Score => Fusion::Score { dense_weight: self.dense_alpha },
-            FusionKind::Rescore => Fusion::Rescore { dense_weight: self.dense_alpha },
-        };
+        index.fusion = self.fusion();
         if let Some(dir) = &self.reranker_dir {
             index.set_reranker(Box::new(OrtReranker::from_dir(dir)?));
         }
