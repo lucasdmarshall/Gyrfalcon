@@ -523,6 +523,7 @@ fn bench_beir(
     depth: usize,
     rerank: bool,
     model: &ModelArgs,
+    out: Option<&Path>,
 ) -> Result<Value, Error> {
     let mut results = Vec::new();
     let mut environment = None;
@@ -555,8 +556,11 @@ fn bench_beir(
         let dir = tempfile::tempdir()?;
         let mut index = model.open(&dir.path().join("collection"), true)?;
         let started = Instant::now();
+        let mut done = 0;
         for batch in docs.chunks(10_000) {
             index.index_sections(batch)?;
+            done += batch.len();
+            eprintln!("{name}: indexed {done}/{} docs, {:.0}s", docs.len(), started.elapsed().as_secs_f64());
         }
         index.wait_until_merge_idle();
         let index_seconds = started.elapsed().as_secs_f64();
@@ -606,6 +610,14 @@ fn bench_beir(
             "rerank": rerank,
             "results": rows,
         }));
+        // Keep finished datasets on disk if a later one is interrupted.
+        if let Some(path) = out {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let partial = json!({ "environment": environment, "datasets": results });
+            std::fs::write(path, serde_json::to_vec_pretty(&partial)?)?;
+        }
     }
     Ok(json!({ "environment": environment, "datasets": results }))
 }
@@ -856,7 +868,7 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
             emit(&bench_ingest(files, chunks_per_file, &model)?, out.as_deref())
         }
         BenchCommand::Beir { dataset, split, fusions, depth, rerank, out, model } => {
-            emit(&bench_beir(&dataset, &split, &fusions, depth, rerank, &model)?, out.as_deref())
+            emit(&bench_beir(&dataset, &split, &fusions, depth, rerank, &model, out.as_deref())?, out.as_deref())
         }
         BenchCommand::Embed { fixture, chunks, batch, queries, out, model } => {
             emit(&bench_embed(&fixture, chunks, batch, queries, &model)?, out.as_deref())
