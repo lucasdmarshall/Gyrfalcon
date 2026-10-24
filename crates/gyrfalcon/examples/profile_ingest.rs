@@ -1,4 +1,9 @@
-//! Times each ingest stage on a JSONL corpus: `cargo run --release --example profile_ingest -- CHUNKS.jsonl MODEL_DIR`.
+//! End-to-end lite ingest timing on a JSONL corpus, plus a per-stage breakdown.
+//!
+//! `cargo run --release --example profile_ingest -p gyrfalcon -- CORPUS.jsonl MODEL_DIR`
+//!
+//! The corpus is either Open RAG Bench chunks (`doc_key`, `text`) or a BEIR corpus
+//! (`_id`, `title`, `text`). MODEL_DIR is a Model2Vec model such as potion-retrieval-32M.
 use std::time::Instant;
 
 use gyrfalcon::{Document, Embedder, Index, IndexConfig, StaticEmbedder};
@@ -9,44 +14,69 @@ fn main() {
     let docs: Vec<Document> = text
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-        .map(|v| Document::body(v["doc_key"].as_str().unwrap_or("x"), v["text"].as_str().unwrap_or("")))
+        .map(|v| {
+            let id = v["doc_key"].as_str().or(v["_id"].as_str()).unwrap_or("x");
+            let title = v["title"].as_str().unwrap_or("").trim();
+            let body = v["text"].as_str().unwrap_or("");
+            Document::body(id, if title.is_empty() { body.to_string() } else { format!("{title}\n\n{body}") })
+        })
         .collect();
     let bytes: usize = docs.iter().map(|d| d.text.len()).sum();
-    println!("{} docs, {:.1} MB", docs.len(), bytes as f64 / 1e6);
-
-    let t = Instant::now();
-    let prepared: Vec<_> = docs.iter().map(|d| gyrfalcon::prepare(&d.text)).collect();
-    println!("prepare        {:7.2} s", t.elapsed().as_secs_f64());
+    let mb = bytes as f64 / 1e6;
+    println!("{} docs, {:.1} MB", docs.len(), mb);
 
     let dir = std::path::Path::new(&args[2]);
     let embedder = StaticEmbedder::from_dir(dir, "x").unwrap();
+    let dimension = embedder.dimension();
+
+    // The VM is noisy: every figure is the best of three runs.
+    let best = |f: &mut dyn FnMut()| {
+        (0..3)
+            .map(|_| {
+                let t = Instant::now();
+                f();
+                t.elapsed().as_secs_f64()
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    let mut prepared = Vec::new();
+    let s = best(&mut || prepared = docs.iter().map(|d| gyrfalcon::prepare(&d.text)).collect());
+    println!("stage prepare (1 thread)      {s:7.2} s {:7.1} MB/s", mb / s);
+
     let texts: Vec<String> = prepared.iter().map(|p| p.embed_text.clone()).collect();
-    let t = Instant::now();
-    for batch in texts.chunks(32) {
-        embedder.embed(batch).unwrap();
+    let s = best(&mut || {
+        for batch in texts.chunks(32) {
+            embedder.embed(batch).unwrap();
+        }
+    });
+    println!("stage static embed (batch 32) {s:7.2} s {:7.1} MB/s", mb / s);
+
+    let config = IndexConfig { dimension, model_id: gyrfalcon::STATIC_MODEL_ID.into(), ..IndexConfig::test_default() };
+    let embedder = std::sync::Arc::new(embedder);
+    let s = best(&mut || {
+        let mut index = Index::create_in_temp(&config).unwrap();
+        index.set_embedder(Box::new(Shared(embedder.clone())));
+        index.auto_merge = false;
+        for batch in docs.chunks(10_000) {
+            index.index_sections(batch).unwrap();
+        }
+    });
+    println!("END-TO-END lite index_sections {s:7.2} s {:7.1} MB/s {:8.0} docs/s", mb / s, docs.len() as f64 / s);
+}
+
+/// Lets the timed runs share one loaded model.
+struct Shared(std::sync::Arc<StaticEmbedder>);
+
+impl Embedder for Shared {
+    fn embed(&self, texts: &[String]) -> gyrfalcon::Result<Vec<Vec<f32>>> {
+        self.0.embed(texts)
     }
-    println!("static embed   {:7.2} s (batch 32)", t.elapsed().as_secs_f64());
-    let t = Instant::now();
-    embedder.embed(&texts).unwrap();
-    println!("static embed   {:7.2} s (one batch)", t.elapsed().as_secs_f64());
 
-    let config = IndexConfig { dimension: embedder.dimension(), ..IndexConfig::test_default() };
-    let mut index = Index::create_in_temp(&config).unwrap();
-    index.set_embedder(Box::new(gyrfalcon::HashEmbedder::new(embedder.dimension())));
-    index.auto_merge = false;
-    let t = Instant::now();
-    index.index_sections(&docs).unwrap();
-    println!("seal (hash embed, tantivy + usearch + files) {:7.2} s", t.elapsed().as_secs_f64());
+    fn model_id(&self) -> &str {
+        self.0.model_id()
+    }
 
-    // Publish cost as the collection grows: many small batches.
-    let mut index = Index::create_in_temp(&config).unwrap();
-    index.set_embedder(Box::new(gyrfalcon::HashEmbedder::new(embedder.dimension())));
-    index.auto_merge = false;
-    let small: Vec<Document> = (0..400).map(|i| Document::body(format!("s{i}"), "tiny doc")).collect();
-    for round in 0..8 {
-        index.index_sections(&docs[round * 2000..(round + 1) * 2000]).unwrap();
-        let t = Instant::now();
-        index.index_sections(&small[round * 50..(round + 1) * 50]).unwrap();
-        println!("  50-doc write after {:6} chunks: {:6.1} ms", (round + 1) * 2000, t.elapsed().as_secs_f64() * 1000.0);
+    fn dimension(&self) -> u32 {
+        self.0.dimension()
     }
 }
