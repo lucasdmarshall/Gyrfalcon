@@ -254,6 +254,28 @@ impl VectorSegment {
         Ok(VectorSegment { index: RwLock::new(index), quantization, dimension, vectors_path, mapped })
     }
 
+    /// The stored vector of `key` as `f32`, scaled as stored. Binary mode reads the mapped
+    /// int8 row; the other modes ask USearch, so `vectors.bin` stays unmapped.
+    pub fn stored_vector(&self, key: u64, ids: &[u64]) -> Option<Vec<f32>> {
+        if let Some(mapped) = &self.mapped {
+            let row = ids.binary_search(&key).ok()?;
+            return Some(dequantize(Quantization::I8, &mapped[row * self.dimension..(row + 1) * self.dimension]));
+        }
+        let index = self.index.read().unwrap_or_else(|p| p.into_inner());
+        match self.quantization {
+            Quantization::I8 => {
+                let mut buffer = vec![0i8; self.dimension];
+                index.get::<i8>(key, &mut buffer).ok().filter(|n| *n > 0)?;
+                Some(buffer.into_iter().map(f32::from).collect())
+            }
+            _ => {
+                let mut buffer = vec![0f32; self.dimension];
+                index.get::<f32>(key, &mut buffer).ok().filter(|n| *n > 0)?;
+                Some(buffer)
+            }
+        }
+    }
+
     /// Files this segment keeps mapped for search.
     pub fn mapped_paths(&self, dir: &Path) -> Vec<PathBuf> {
         let mut out = vec![dir.join("usearch.index")];

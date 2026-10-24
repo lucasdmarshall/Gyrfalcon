@@ -35,7 +35,7 @@ pub use embed::{
 };
 pub use epoch::{FileDeleter, FsDeleter, ReaderGuard, Reaper};
 pub use error::{Error, IncompatibleField, Result};
-pub use fuse::{rrf, rrf_weighted};
+pub use fuse::{rrf, rrf_weighted, score_fusion, Fusion};
 pub use index::{Document, Index, IndexReport, FAN_OUT_WARNING, SEAL_EVERY};
 pub use lexical::{GyrTextTokenizer, LexicalIndex, ScoredId, TantivyLexical};
 pub use manifest::{

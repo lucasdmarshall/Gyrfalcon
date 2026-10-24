@@ -231,3 +231,27 @@ fn reopen_searches_the_sealed_engines() {
     let hits = index.retrieve("bread", RetrieveOptions { rerank: false, limit: 1 }).unwrap();
     assert_eq!(hits.hits[0].doc_id, "b");
 }
+
+#[test]
+fn score_fusion_normalizes_each_leg() {
+    // Lexical: 10 is best. Dense: 11 is best. With dense weight 0.2 lexical wins.
+    let fused = gyrfalcon::score_fusion(&[(10, 8.0), (11, 4.0)], &[(11, 0.9), (10, 0.5)], 0.2);
+    assert_eq!(fused[0].0, 10);
+    assert!((fused[0].1 - 0.8).abs() < 1e-6);
+    assert!((fused[1].1 - 0.2).abs() < 1e-6);
+    let dense_heavy = gyrfalcon::score_fusion(&[(10, 8.0), (11, 4.0)], &[(11, 0.9), (10, 0.5)], 0.8);
+    assert_eq!(dense_heavy[0].0, 11);
+}
+
+#[test]
+fn rescore_gives_lexical_only_hits_their_exact_similarity() {
+    let (_dir, mut index) = ninety_dead_of_100(&IndexConfig::test_default());
+    index.fusion = gyrfalcon::Fusion::Rescore { dense_weight: 0.3 };
+    let hits = index.retrieve("term", RetrieveOptions { rerank: false, limit: 10 }).unwrap();
+    assert_eq!(hits.chunk_ids.len(), 10);
+    assert!(hits.chunk_ids.iter().all(|id| *id >= 90));
+    // Rescoring reads stored vectors through USearch; int8 still leaves vectors.bin unmapped.
+    assert!(index.vector_search_mapped_paths().iter().all(|path| !path.ends_with("vectors.bin")));
+    index.fusion = gyrfalcon::Fusion::Score { dense_weight: 0.3 };
+    assert_eq!(index.retrieve("term", RetrieveOptions { rerank: false, limit: 10 }).unwrap().chunk_ids.len(), 10);
+}

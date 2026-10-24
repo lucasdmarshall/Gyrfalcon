@@ -9,8 +9,9 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use gyrfalcon::{
-    AnswerEvent, AnswerOptions, ChatConfig, Document, Embedder, Error, HashEmbedder, HttpEmbedder, IncompatibleField,
-    Index, IndexConfig, OrtModel, OrtReranker, Quantization, RetrieveOptions, SessionEmbedder, StaticEmbedder,
+    AnswerEvent, AnswerOptions, ChatConfig, Document, Embedder, Error, Fusion, HashEmbedder, HttpEmbedder,
+    IncompatibleField, Index, IndexConfig, OrtModel, OrtReranker, Quantization, RetrieveOptions, SessionEmbedder,
+    StaticEmbedder,
 };
 
 #[derive(Parser)]
@@ -79,6 +80,13 @@ pub enum EmbedderKind {
     Static,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum FusionKind {
+    Rrf,
+    Score,
+    Rescore,
+}
+
 #[derive(Args, Clone, Debug)]
 pub struct ModelArgs {
     #[arg(long, value_enum, env = "GYR_EMBEDDER", default_value = "ort")]
@@ -105,6 +113,12 @@ pub struct ModelArgs {
     /// RRF weight of the dense leg.
     #[arg(long, default_value_t = 1.0)]
     pub dense_weight: f32,
+    /// How retrieve combines BM25 and dense: rrf, score, or rescore.
+    #[arg(long, value_enum, default_value = "rrf")]
+    pub fusion: FusionKind,
+    /// Dense share for --fusion score or rescore, in [0, 1].
+    #[arg(long, default_value_t = 0.3)]
+    pub dense_alpha: f32,
     #[arg(long, env = "GYR_CHAT_ENDPOINT")]
     pub chat_endpoint: Option<String>,
     #[arg(long, env = "GYR_CHAT_MODEL", default_value = "default")]
@@ -186,6 +200,11 @@ impl ModelArgs {
         }
         index.set_embedder(embedder);
         index.rrf_weights = [self.lexical_weight, self.dense_weight];
+        index.fusion = match self.fusion {
+            FusionKind::Rrf => Fusion::Rrf,
+            FusionKind::Score => Fusion::Score { dense_weight: self.dense_alpha },
+            FusionKind::Rescore => Fusion::Rescore { dense_weight: self.dense_alpha },
+        };
         if let Some(dir) = &self.reranker_dir {
             index.set_reranker(Box::new(OrtReranker::from_dir(dir)?));
         }
