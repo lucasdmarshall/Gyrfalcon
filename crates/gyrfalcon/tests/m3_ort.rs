@@ -206,15 +206,17 @@ fn static_model_embeds_and_retrieves() {
     let dimension = gyrfalcon::StaticEmbedder::read_dimension(dir).unwrap();
     let embedder = gyrfalcon::StaticEmbedder::from_dir(dir, gyrfalcon::STATIC_MODEL_ID).unwrap();
     assert_eq!(embedder.dimension(), dimension);
-    let texts = ["Memory safety in Rust", "Rust's borrow checker prevents use-after-free bugs", "How to bake sourdough bread"]
-        .map(String::from)
-        .to_vec();
+    let texts =
+        ["Memory safety in Rust", "Rust's borrow checker prevents use-after-free bugs", "How to bake sourdough bread"]
+            .map(String::from)
+            .to_vec();
     let vectors = embedder.embed(&texts).unwrap();
     assert!(cosine(&vectors[0], &vectors[1]) > cosine(&vectors[0], &vectors[2]));
     let config = IndexConfig { model_id: gyrfalcon::STATIC_MODEL_ID.into(), dimension, ..IndexConfig::test_default() };
     let mut index = Index::create_in_temp(&config).unwrap();
     index.set_embedder(Box::new(embedder));
-    let docs: Vec<Document> = texts.iter().enumerate().map(|(i, t)| Document::body(format!("d{i}"), t.clone())).collect();
+    let docs: Vec<Document> =
+        texts.iter().enumerate().map(|(i, t)| Document::body(format!("d{i}"), t.clone())).collect();
     index.index_documents(&docs).unwrap();
     let hits = index.retrieve("sourdough baking", RetrieveOptions { rerank: false, limit: 3 }).unwrap();
     assert_eq!(hits.hits[0].doc_id, "d2");

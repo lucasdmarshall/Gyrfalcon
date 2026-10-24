@@ -170,6 +170,14 @@ fn rrf_uses_constant_60() {
 }
 
 #[test]
+fn rrf_weights_scale_each_leg() {
+    let fused = gyrfalcon::rrf_weighted(&[10, 11], &[11, 10], [2.0, 0.0]);
+    assert_eq!(fused[0].0, 10);
+    assert!((fused[0].1 - 2.0 / 61.0).abs() < 1e-6);
+    assert!((fused[1].1 - 2.0 / 62.0).abs() < 1e-6);
+}
+
+#[test]
 fn retrieve_prepares_the_query_once() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();

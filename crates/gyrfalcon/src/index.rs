@@ -294,6 +294,8 @@ pub struct Index {
     pub deleter_fail_times: u32,
     /// Test hook: HNSW returns nothing so the dense leg falls back to the exact scan.
     pub testing_starve_hnsw: bool,
+    /// RRF weights `[lexical, dense]`. The spec default is `[1, 1]`.
+    pub rrf_weights: [f32; 2],
     pub(crate) last_report: IndexReport,
     _lock: WriterLock,
     tempdir: Option<tempfile::TempDir>,
@@ -406,6 +408,7 @@ impl Index {
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
             testing_starve_hnsw: false,
+            rrf_weights: [crate::fuse::LEXICAL_WEIGHT, crate::fuse::DENSE_WEIGHT],
             auto_merge: true,
             pause_merge_after_copy: false,
             deleter_fail_times: 0,

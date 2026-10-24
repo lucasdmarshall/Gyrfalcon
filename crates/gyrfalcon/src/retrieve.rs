@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::fuse::rrf;
+use crate::fuse::rrf_weighted;
 use crate::index::{Index, Snapshot};
 use crate::lexical::{CollectionStats, LexicalIndex, ScoredId};
 use crate::prepare::{prepare, Token};
@@ -132,7 +132,7 @@ impl Index {
         let lexical = lexical?;
         let dense = dense?;
         let lexical_ids: Vec<u64> = lexical.iter().map(|hit| hit.chunk_id).collect();
-        let fused = rrf(&lexical_ids, &dense.ids);
+        let fused = rrf_weighted(&lexical_ids, &dense.ids, self.rrf_weights);
 
         let reranker: &dyn Reranker = if opts.rerank { self.reranker.as_ref() } else { &NoopReranker };
         let mut hits = Vec::new();

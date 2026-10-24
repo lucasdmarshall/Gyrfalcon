@@ -99,6 +99,12 @@ pub struct ModelArgs {
     pub dimension: Option<u32>,
     #[arg(long, default_value = "i8", value_parser = parse_quantization)]
     pub quantization: Quantization,
+    /// RRF weight of the BM25 leg.
+    #[arg(long, default_value_t = 1.0)]
+    pub lexical_weight: f32,
+    /// RRF weight of the dense leg.
+    #[arg(long, default_value_t = 1.0)]
+    pub dense_weight: f32,
     #[arg(long, env = "GYR_CHAT_ENDPOINT")]
     pub chat_endpoint: Option<String>,
     #[arg(long, env = "GYR_CHAT_MODEL", default_value = "default")]
@@ -179,6 +185,7 @@ impl ModelArgs {
             });
         }
         index.set_embedder(embedder);
+        index.rrf_weights = [self.lexical_weight, self.dense_weight];
         if let Some(dir) = &self.reranker_dir {
             index.set_reranker(Box::new(OrtReranker::from_dir(dir)?));
         }
