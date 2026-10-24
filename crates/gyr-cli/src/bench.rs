@@ -646,6 +646,11 @@ fn bench_trace(
         }
         index.wait_until_merge_idle();
         eprintln!("{}: indexed {} docs in {:.0}s", set.name, set.docs.len(), started.elapsed().as_secs_f64());
+        // Warm the page cache and stored-field caches, so pass 1 and the live check that
+        // follows it both measure a warm index.
+        for (_, _, text, _) in &set.queries {
+            index.retrieve(text, RetrieveOptions { rerank: false, limit: 100 })?;
+        }
         // Pass 1: scores and step timings, with nothing else running between queries.
         let mut traces = Vec::with_capacity(set.queries.len());
         for (split, id, text, qrels) in &set.queries {
