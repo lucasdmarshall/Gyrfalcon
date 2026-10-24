@@ -1,36 +1,10 @@
 use gyrfalcon::testing::CountingEmbedder;
-use gyrfalcon::{
-    Document, Error, FallbackStep, Index, IndexConfig, LexicalIndex, Quantization, RetrieveOptions, TantivyLexical,
-};
+use gyrfalcon::{Document, Error, FallbackStep, Index, IndexConfig, Quantization, RetrieveOptions};
 
 fn unit(dimension: usize, axis: usize, sign: f32) -> Vec<f32> {
     let mut vector = vec![0.0; dimension];
     vector[axis] = sign;
     vector
-}
-
-#[test]
-fn registered_tokenizer_and_prepare_yield_the_same_postings() {
-    let fixtures = ["Memory safety in Rust", "မြန်မာ စာ ကို ဖတ်ပါ", "error E0308", "   \t\n ", "😀"];
-    let plain_dir = tempfile::tempdir().unwrap();
-    let pre_dir = tempfile::tempdir().unwrap();
-    let mut plain = TantivyLexical::create(plain_dir.path()).unwrap();
-    let mut pre = TantivyLexical::create(pre_dir.path()).unwrap();
-    for (id, text) in fixtures.iter().enumerate() {
-        plain.add_plain_text(id as u64, text).unwrap();
-        pre.add_prepared(id as u64, &gyrfalcon::prepare(text)).unwrap();
-    }
-    plain.seal().unwrap();
-    pre.seal().unwrap();
-    let mut terms: Vec<String> =
-        fixtures.iter().flat_map(|text| gyrfalcon::prepare(text).tokens.into_iter().map(|t| t.text)).collect();
-    terms.extend(["memory", "Memory", "မြန်မာ", "e0308", "E0308", "😀", " "].map(String::from));
-    for term in terms {
-        assert_eq!(plain.postings(&term).unwrap(), pre.postings(&term).unwrap(), "{term}");
-    }
-    assert_eq!(pre.postings("memory").unwrap(), vec![(0, 1, vec![0])]);
-    assert_eq!(pre.postings("e0308").unwrap(), vec![(2, 1, vec![1])]);
-    assert!(pre.postings("😀").unwrap().is_empty());
 }
 
 #[test]

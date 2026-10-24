@@ -5,8 +5,8 @@
 //!   segment.json   identity fields and counts
 //!   ids.bin        stored chunk ids, ascending (dead ones included)
 //!   vectors.bin    quantized rows in the same order
-//!   terms.bin      (term, doc_freq) counted while the segment was written
-//!   tantivy/       Tantivy index, one document per chunk
+//!   terms.bin      (term, doc_freq) of this segment
+//!   lexical/       BM25 index and stored chunk fields, doc ordinals in ids.bin order
 //!   usearch.index  HNSW graph keyed by chunk id
 //! ```
 //!
@@ -17,10 +17,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::lexical::{LexicalIndex, TantivyLexical};
+use crate::lexical::{self, CollectionStats, LexicalSegment, ScoredId, StoredChunk};
 use crate::manifest::{IndexConfig, Manifest};
-use crate::prepare::PreparedText;
-use crate::store::{self, TermMap};
+use crate::prepare::{PreparedText, Token};
+use crate::store::{self, TermMap, Tombstones};
 use crate::vector::{self, VectorSegment};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,7 +58,7 @@ pub struct Segment {
     /// Stored chunk ids, ascending.
     pub ids: Vec<u64>,
     pub terms: TermMap,
-    pub lexical: TantivyLexical,
+    pub lexical: LexicalSegment,
     pub vector: VectorSegment,
 }
 
@@ -69,6 +69,31 @@ impl Segment {
 
     pub fn contains(&self, chunk_id: u64) -> bool {
         self.ids.binary_search(&chunk_id).is_ok()
+    }
+
+    /// The best `limit` live chunks of this segment by collection BM25.
+    pub fn search_lexical(
+        &self,
+        tokens: &[Token],
+        limit: usize,
+        stats: &CollectionStats,
+        dead: &Tombstones,
+    ) -> Result<Vec<ScoredId>> {
+        self.lexical.search(tokens, limit, stats, dead, &self.ids)
+    }
+
+    /// The stored fields of `chunk_id`, or `None` when this segment does not hold it.
+    pub fn stored(&self, chunk_id: u64) -> Result<Option<StoredChunk>> {
+        let Ok(doc) = self.ids.binary_search(&chunk_id) else { return Ok(None) };
+        let stored = self.lexical.stored(doc as u32)?;
+        if stored.chunk_id != chunk_id {
+            return Err(Error::SegmentCorrupt(format!(
+                "segment {} stores chunk {} where ids.bin has {chunk_id}",
+                self.name(),
+                stored.chunk_id
+            )));
+        }
+        Ok(Some(stored))
     }
 
     pub fn open(root: &Path, id: u64, manifest: &Manifest) -> Result<Segment> {
@@ -94,7 +119,15 @@ impl Segment {
             )));
         }
         let terms = TermMap::read(&dir.join("terms.bin"))?;
-        let lexical = TantivyLexical::open(&dir.join("tantivy"))?;
+        let lexical = LexicalSegment::open(&dir.join("lexical"))?;
+        if lexical.num_docs() as usize != ids.len() {
+            return Err(Error::SegmentCorrupt(format!(
+                "segment {} lexical index holds {} docs, ids.bin {}",
+                store::segment_name(id),
+                lexical.num_docs(),
+                ids.len()
+            )));
+        }
         let vector = VectorSegment::open(&dir, meta.quantization, meta.dimension as usize)?;
         Ok(Segment { id, dir, meta, ids, terms, lexical, vector })
     }
@@ -102,22 +135,6 @@ impl Segment {
 
 pub fn segment_dir(root: &Path, id: u64) -> PathBuf {
     root.join("segments").join(store::segment_name(id))
-}
-
-/// Counts `(term, doc_freq)` and token occurrences for a set of chunks.
-pub fn count_terms<'a>(chunks: impl Iterator<Item = &'a PreparedText>) -> (TermMap, u64) {
-    let mut terms = TermMap::default();
-    let mut num_tokens = 0u64;
-    for prepared in chunks {
-        num_tokens += prepared.tokens.len() as u64;
-        let mut unique: Vec<&str> = prepared.tokens.iter().map(|t| t.text.as_str()).collect();
-        unique.sort_unstable();
-        unique.dedup();
-        for term in unique {
-            *terms.0.entry(term.to_string()).or_insert(0) += 1;
-        }
-    }
-    (terms, num_tokens)
 }
 
 /// Writes every file of a new segment directory and fsyncs it. `chunks` must be sorted by
@@ -139,21 +156,10 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
         )));
     }
 
-    // The Tantivy index, the USearch graph, and the small files build at the same time.
-    let num_tokens = std::thread::scope(|scope| -> Result<u64> {
-        let tantivy = scope.spawn(|| -> Result<()> {
-            let t = std::time::Instant::now();
-            let mut lexical = TantivyLexical::create(&dir.join("tantivy"))?;
-            for chunk in chunks {
-                lexical.add(chunk)?;
-            }
-            eprintln!("P   tantivy add {:.2}", t.elapsed().as_secs_f64());
-            let r = lexical.seal();
-            eprintln!("P   tantivy total {:.2}", t.elapsed().as_secs_f64());
-            r
-        });
+    // The lexical index, the USearch graph, and the small files build at the same time.
+    let built = std::thread::scope(|scope| -> Result<lexical::Built> {
+        let lexical = scope.spawn(|| lexical::write(&dir.join("lexical"), chunks));
         let usearch = scope.spawn(|| {
-            let _guard = Elapsed("usearch", std::time::Instant::now());
             let rows: Vec<(u64, &[u8])> = chunks.iter().map(|c| (c.chunk_id, c.vector.as_slice())).collect();
             vector::write_usearch(&dir.join("usearch.index"), config.quantization, config.dimension as usize, &rows)
         });
@@ -165,14 +171,11 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
             vectors.extend_from_slice(&chunk.vector);
         }
         store::write_synced(&dir.join("vectors.bin"), &vectors)?;
-        let t = std::time::Instant::now();
-        let (terms, num_tokens) = count_terms(chunks.iter().map(|c| &c.prepared));
-        eprintln!("P   terms {:.2}", t.elapsed().as_secs_f64());
-        store::write_synced(&dir.join("terms.bin"), &terms.encode())?;
 
-        tantivy.join().map_err(|_| Error::Lexical("tantivy build panicked".into()))??;
+        let built = lexical.join().map_err(|_| Error::Lexical("lexical build panicked".into()))??;
+        store::write_synced(&dir.join("terms.bin"), &built.terms.encode())?;
         usearch.join().map_err(|_| Error::Vector("usearch build panicked".into()))??;
-        Ok(num_tokens)
+        Ok(built)
     })?;
     let meta = SegmentMeta {
         model_id: config.model_id.clone(),
@@ -181,7 +184,7 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
         analyzer_id: config.analyzer_id.clone(),
         chunk_count: chunks.len() as u64,
         num_docs: chunks.len() as u64,
-        num_tokens,
+        num_tokens: built.num_tokens,
     };
     sync_tree(&dir)?;
 
@@ -203,6 +206,3 @@ fn sync_tree(dir: &Path) -> Result<()> {
     }
     store::sync_dir(dir)
 }
-
-struct Elapsed(&'static str, std::time::Instant);
-impl Drop for Elapsed { fn drop(&mut self) { eprintln!("P   {} {:.2}", self.0, self.1.elapsed().as_secs_f64()); } }

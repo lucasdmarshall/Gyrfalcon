@@ -93,7 +93,7 @@ fn ram_report_lists_the_byte_counts() {
     for key in [
         "usearch_bytes",
         "vectors_bin_bytes",
-        "tantivy_bytes",
+        "lexical_bytes",
         "catalog_bytes",
         "tombstone_bytes",
         "bm25_bytes",
@@ -111,7 +111,7 @@ fn bench_ram_fills_the_byte_counts() {
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["vectors_bin_bytes"], 2000 * 384);
     assert!(report["usearch_bytes"].as_u64().unwrap() > 0);
-    assert!(report["tantivy_bytes"].as_u64().unwrap() > 0);
+    assert!(report["lexical_bytes"].as_u64().unwrap() > 0);
     assert!(report["rss_model_loaded"].as_u64().unwrap() > 0);
     assert!(report["rss_index_open"].as_u64().unwrap() >= report["rss_baseline"].as_u64().unwrap());
     assert_eq!(report["tombstone_count"], 0);

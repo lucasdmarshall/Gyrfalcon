@@ -189,7 +189,7 @@ pub struct IngestReport {
 pub const RAM_KEYS: [&str; 10] = [
     "usearch_bytes",
     "vectors_bin_bytes",
-    "tantivy_bytes",
+    "lexical_bytes",
     "catalog_bytes",
     "tombstone_bytes",
     "bm25_bytes",
@@ -217,17 +217,17 @@ pub fn collection_bytes(root: &std::path::Path) -> Map<String, Value> {
     }
     let mut out = bench_ram_shape();
     let segments = root.join("segments");
-    let (mut usearch, mut vectors, mut tantivy) = (0, 0, 0);
+    let (mut usearch, mut vectors, mut lexical) = (0, 0, 0);
     if let Ok(entries) = std::fs::read_dir(&segments) {
         for entry in entries.flatten() {
             usearch += size(&entry.path().join("usearch.index"));
             vectors += size(&entry.path().join("vectors.bin"));
-            tantivy += size(&entry.path().join("tantivy"));
+            lexical += size(&entry.path().join("lexical"));
         }
     }
     out.insert("usearch_bytes".into(), json!(usearch));
     out.insert("vectors_bin_bytes".into(), json!(vectors));
-    out.insert("tantivy_bytes".into(), json!(tantivy));
+    out.insert("lexical_bytes".into(), json!(lexical));
     out.insert("catalog_bytes".into(), json!(size(&root.join("catalog"))));
     out.insert("tombstone_bytes".into(), json!(size(&root.join("tombstones"))));
     out.insert("bm25_bytes".into(), json!(size(&root.join("bm25"))));

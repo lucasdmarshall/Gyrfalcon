@@ -234,10 +234,6 @@ impl Tombstones {
         self.ids.is_empty()
     }
 
-    pub fn ids(&self) -> &[u64] {
-        &self.ids
-    }
-
     pub fn with(&self, more: &[u64]) -> Tombstones {
         let mut ids = self.ids.clone();
         ids.extend_from_slice(more);

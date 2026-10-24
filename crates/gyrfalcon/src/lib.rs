@@ -39,7 +39,7 @@ pub use epoch::{FileDeleter, FsDeleter, ReaderGuard, Reaper};
 pub use error::{Error, IncompatibleField, Result};
 pub use fuse::{rrf, rrf_weighted, score_fusion, Fusion, RESCORE_DENSE_WEIGHT};
 pub use index::{Document, Index, IndexReport, FAN_OUT_WARNING, SEAL_EVERY};
-pub use lexical::{GyrTextTokenizer, LexicalIndex, ScoredId, TantivyLexical};
+pub use lexical::ScoredId;
 pub use manifest::{
     IndexConfig, Manifest, Quantization, ANALYZER_ID, DEFAULT_DIMENSION, DEFAULT_MODEL_ID, DEFAULT_RERANKER_ID,
     STATIC_MODEL_ID,

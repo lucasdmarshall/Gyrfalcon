@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::store;
 
-pub const FORMAT_VERSION: u32 = 1;
+/// 2: segments hold the owned `lexical/` index; 1 held a Tantivy directory.
+pub const FORMAT_VERSION: u32 = 2;
 pub const ANALYZER_ID: &str = "gyr-text-v1";
 pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-small-en-v1.5";
 pub const DEFAULT_DIMENSION: u32 = 384;
@@ -166,6 +167,13 @@ impl Manifest {
 /// Compares the four identity fields. Order: model, dimension, quantization, analyzer.
 pub fn check_compatible(manifest: &Manifest, expected: &IndexConfig) -> Result<()> {
     use crate::error::{mismatch, IncompatibleField};
+    if manifest.format_version != FORMAT_VERSION {
+        return mismatch(
+            IncompatibleField::FormatVersion,
+            &manifest.format_version.to_string(),
+            &FORMAT_VERSION.to_string(),
+        );
+    }
     if manifest.model_id != expected.model_id {
         return mismatch(IncompatibleField::ModelId, &manifest.model_id, &expected.model_id);
     }

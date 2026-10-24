@@ -4,6 +4,8 @@ use std::path::PathBuf;
 /// The manifest field an open request disagreed with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncompatibleField {
+    /// The on-disk format. An index from another format version must be rebuilt.
+    FormatVersion,
     ModelId,
     Dimension,
     Quantization,
@@ -13,6 +15,7 @@ pub enum IncompatibleField {
 impl IncompatibleField {
     pub fn as_str(self) -> &'static str {
         match self {
+            IncompatibleField::FormatVersion => "format_version",
             IncompatibleField::ModelId => "model_id",
             IncompatibleField::Dimension => "dimension",
             IncompatibleField::Quantization => "quantization",

@@ -581,3 +581,52 @@ Measured on Open RAG Bench text-only (1914 questions, 4-core VM). See
   unmapped.
 - A viewed USearch index reserves 64 search slots; searches beyond that wait instead of
   failing.
+
+### Owned BM25 index replaces Tantivy (format version 2)
+
+The `LexicalIndex` section allows an owned postings index once a bench shows Tantivy is the
+limiter. After the ingest work above, it was: per 10,000-chunk seal on Open RAG Bench sections,
+Tantivy took 2.69 s and the separate term count 0.75 s, while USearch took 0.66 s and records
+plus static embedding about 1.3 s (`examples/profile_ingest`, best of 3, 4-core VM). Tantivy
+indexed about 2M tokens/s on its one writer thread, and more writer threads gave 1.4x for 4x
+the memory.
+
+Each segment now holds `lexical/` instead of `tantivy/`:
+
+- `terms.dict`: sorted terms with postings offset, segment doc freq, and the largest tf and
+  smallest length norm of the list.
+- `postings.bin`: per term, ascending doc ordinals (positions in `ids.bin`) and term
+  frequencies, 128-doc blocks bit-packed with skip entries (last doc, max tf, min norm), and
+  a vint tail. No positions: no query uses them.
+- `norms.bin`: one length-norm byte per doc, Tantivy's and Lucene's encoding.
+- `docs.bin`: stored chunk fields in 16 KiB LZ4 blocks.
+
+The build interns borrowed token strings, counts `(term, tf)` per doc, and counting-sorts the
+pairs by term, so the postings come out in doc order without copying a token. It also yields
+the segment's `terms.bin` map, replacing the separate count. A query scores term at a time into
+one accumulator per doc and keeps the best live chunks in a heap; the tombstone test runs only
+for a hit that would enter the heap.
+
+Scores are Tantivy's BM25 (`k1 = 1.2`, `b = 0.75`, f32, same norm table). Evidence:
+
+- A unit test builds Tantivy (now a dev-dependency) and the owned index over random
+  collections with lengths past the exact-norm limit, injected collection statistics, and
+  tombstones: 30,135 compared hits, 85% bit-identical scores, the rest within float rounding.
+- On SciFact, NFCorpus, ArguAna, and FiQA test queries (2,677), every top-100 list is
+  identical to Tantivy's, and BM25 nDCG@10 is unchanged (0.6611, 0.3079, 0.3048, 0.2373).
+
+Measured effect (best of 3, 4-core VM):
+
+| | Tantivy | owned |
+|---|---|---|
+| lexical build per seal, ORB sections | 3.45 s (index + term count) | 0.35 s |
+| lexical build per seal, FiQA | 1.20 s | 0.12 s |
+| end-to-end lite ingest, ORB (85 MB) | 8.94 s | 3.34 s |
+| end-to-end lite ingest, FiQA (44 MB) | 7.70 s | 5.87 s |
+| BM25 leg mean, SciFact / NFCorpus | 293 / 75 us | 104 / 24 us |
+| BM25 leg mean, ArguAna / FiQA (6 segments) | 1,098 / 2,793 us | 525 / 906 us |
+| lexical bytes, FiQA | 52.3 MB | 43.9 MB |
+
+`manifest.json` `format_version` is 2. Opening an index with any other version fails with
+`IncompatibleIndex` on `format_version`; a version 1 index must be rebuilt. The bench RAM
+report key `tantivy_bytes` is now `lexical_bytes`.

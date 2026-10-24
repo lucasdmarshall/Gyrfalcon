@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::error::{Error, Result};
 use crate::fuse::{rrf_weighted, score_fusion, Fusion};
 use crate::index::{Index, Snapshot};
-use crate::lexical::{CollectionStats, LexicalIndex, ScoredId};
+use crate::lexical::{CollectionStats, ScoredId};
 use crate::prepare::{prepare, Token};
 use crate::rerank::{NoopReranker, Reranker, RERANK_K};
 use crate::vector::{DenseQuery, FallbackStep};
@@ -67,7 +67,7 @@ pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -
     };
     let mut merged = Vec::new();
     for segment in &snapshot.segments {
-        merged.extend(segment.lexical.search(tokens, limit, &stats, &snapshot.tombstones)?);
+        merged.extend(segment.search_lexical(tokens, limit, &stats, &snapshot.tombstones)?);
     }
     merged.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.chunk_id.cmp(&b.chunk_id)));
     merged.truncate(limit);
@@ -96,7 +96,7 @@ pub(crate) fn dense_leg(snapshot: &Snapshot, query: &DenseQuery, limit: usize) -
 
 pub(crate) fn hit_for(snapshot: &Snapshot, chunk_id: u64, score: f32) -> Result<Option<Hit>> {
     let Some(segment) = snapshot.segment_of(chunk_id) else { return Ok(None) };
-    Ok(segment.lexical.stored(chunk_id)?.map(|stored| Hit {
+    Ok(segment.stored(chunk_id)?.map(|stored| Hit {
         chunk_id,
         doc_id: stored.doc_key,
         body: stored.body,
