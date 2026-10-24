@@ -130,26 +130,50 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
     }
     std::fs::create_dir_all(&dir)?;
 
-    let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
-    store::write_synced(&dir.join("ids.bin"), &store::encode_ids(&ids))?;
-
     let row_len = config.dimension as usize * config.quantization.bytes_per_component();
-    let mut vectors = Vec::with_capacity(chunks.len() * row_len);
-    for chunk in chunks {
-        if chunk.vector.len() != row_len {
-            return Err(Error::SegmentCorrupt(format!(
-                "chunk {} has a {}-byte row, expected {row_len}",
-                chunk.chunk_id,
-                chunk.vector.len()
-            )));
-        }
-        vectors.extend_from_slice(&chunk.vector);
+    if let Some(chunk) = chunks.iter().find(|c| c.vector.len() != row_len) {
+        return Err(Error::SegmentCorrupt(format!(
+            "chunk {} has a {}-byte row, expected {row_len}",
+            chunk.chunk_id,
+            chunk.vector.len()
+        )));
     }
-    store::write_synced(&dir.join("vectors.bin"), &vectors)?;
 
-    let (terms, num_tokens) = count_terms(chunks.iter().map(|c| &c.prepared));
-    store::write_synced(&dir.join("terms.bin"), &terms.encode())?;
+    // The Tantivy index, the USearch graph, and the small files build at the same time.
+    let num_tokens = std::thread::scope(|scope| -> Result<u64> {
+        let tantivy = scope.spawn(|| -> Result<()> {
+            let t = std::time::Instant::now();
+            let mut lexical = TantivyLexical::create(&dir.join("tantivy"))?;
+            for chunk in chunks {
+                lexical.add(chunk)?;
+            }
+            eprintln!("P   tantivy add {:.2}", t.elapsed().as_secs_f64());
+            let r = lexical.seal();
+            eprintln!("P   tantivy total {:.2}", t.elapsed().as_secs_f64());
+            r
+        });
+        let usearch = scope.spawn(|| {
+            let _guard = Elapsed("usearch", std::time::Instant::now());
+            let rows: Vec<(u64, &[u8])> = chunks.iter().map(|c| (c.chunk_id, c.vector.as_slice())).collect();
+            vector::write_usearch(&dir.join("usearch.index"), config.quantization, config.dimension as usize, &rows)
+        });
 
+        let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
+        store::write_synced(&dir.join("ids.bin"), &store::encode_ids(&ids))?;
+        let mut vectors = Vec::with_capacity(chunks.len() * row_len);
+        for chunk in chunks {
+            vectors.extend_from_slice(&chunk.vector);
+        }
+        store::write_synced(&dir.join("vectors.bin"), &vectors)?;
+        let t = std::time::Instant::now();
+        let (terms, num_tokens) = count_terms(chunks.iter().map(|c| &c.prepared));
+        eprintln!("P   terms {:.2}", t.elapsed().as_secs_f64());
+        store::write_synced(&dir.join("terms.bin"), &terms.encode())?;
+
+        tantivy.join().map_err(|_| Error::Lexical("tantivy build panicked".into()))??;
+        usearch.join().map_err(|_| Error::Vector("usearch build panicked".into()))??;
+        Ok(num_tokens)
+    })?;
     let meta = SegmentMeta {
         model_id: config.model_id.clone(),
         dimension: config.dimension,
@@ -159,14 +183,6 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
         num_docs: chunks.len() as u64,
         num_tokens,
     };
-    let mut lexical = TantivyLexical::create(&dir.join("tantivy"))?;
-    for chunk in chunks {
-        lexical.add(chunk)?;
-    }
-    lexical.seal()?;
-    drop(lexical);
-    let rows: Vec<(u64, &[u8])> = chunks.iter().map(|c| (c.chunk_id, c.vector.as_slice())).collect();
-    vector::write_usearch(&dir.join("usearch.index"), config.quantization, config.dimension as usize, &rows)?;
     sync_tree(&dir)?;
 
     store::write_synced(&dir.join("segment.json"), &serde_json::to_vec_pretty(&meta)?)?;
@@ -187,3 +203,6 @@ fn sync_tree(dir: &Path) -> Result<()> {
     }
     store::sync_dir(dir)
 }
+
+struct Elapsed(&'static str, std::time::Instant);
+impl Drop for Elapsed { fn drop(&mut self) { eprintln!("P   {} {:.2}", self.0, self.1.elapsed().as_secs_f64()); } }

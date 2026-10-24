@@ -213,6 +213,28 @@ impl Shared {
     }
 }
 
+/// Threads for ingest work: every available core.
+pub(crate) fn worker_threads() -> usize {
+    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+}
+
+/// Maps `items` on every core, keeping order, and flattens the per-item outputs.
+pub(crate) fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> Vec<R> + Sync) -> Vec<R> {
+    let threads = worker_threads();
+    if threads == 1 || items.len() < 2 * threads {
+        return items.iter().flat_map(&f).collect();
+    }
+    let per_thread = items.len().div_ceil(threads);
+    std::thread::scope(|scope| {
+        let f = &f;
+        let parts: Vec<_> = items
+            .chunks(per_thread)
+            .map(|part| scope.spawn(move || part.iter().flat_map(f).collect::<Vec<R>>()))
+            .collect();
+        parts.into_iter().flat_map(|part| part.join().expect("ingest worker panicked")).collect()
+    })
+}
+
 /// `writer.lock` holds the writer pid. A live pid other than a dropped index is `WriterBusy`.
 struct WriterLock {
     path: PathBuf,
@@ -510,12 +532,22 @@ impl Index {
 
     /// One chunk per document, without the chunker. The accuracy fixture stores sections this way.
     pub fn index_sections(&mut self, docs: &[Document]) -> Result<IndexReport> {
-        let mut records = Vec::new();
-        for doc in docs {
-            let prefix = if doc.contextual_prefix { Some(self.contextual_prefix(doc, &doc.text)?) } else { None };
-            records.push(self.record(doc, 0, doc.text.len(), prefix));
-        }
+        let mut records = if docs.iter().any(|d| d.contextual_prefix) {
+            let mut records = Vec::new();
+            for doc in docs {
+                let prefix = if doc.contextual_prefix { Some(self.contextual_prefix(doc, &doc.text)?) } else { None };
+                records.push(self.record(doc, 0, doc.text.len(), prefix));
+            }
+            records
+        } else {
+            let t = std::time::Instant::now();
+            let r = parallel_map(docs, |doc| vec![self.record(doc, 0, doc.text.len(), None)]);
+            eprintln!("P records {:.2}", t.elapsed().as_secs_f64());
+            r
+        };
+        let t = std::time::Instant::now();
         self.embed_records(&mut records)?;
+        eprintln!("P embed {:.2}", t.elapsed().as_secs_f64());
         self.seal_and_report(records)
     }
 
@@ -554,6 +586,11 @@ impl Index {
     }
 
     pub(crate) fn chunk_records(&self, docs: &[Document]) -> Result<Vec<ChunkRecord>> {
+        if !docs.iter().any(|d| d.contextual_prefix) {
+            return Ok(parallel_map(docs, |doc| {
+                chunk(&doc.text).into_iter().map(|span| self.record(doc, span.start, span.end, None)).collect()
+            }));
+        }
         let mut records = Vec::new();
         for doc in docs {
             for span in chunk(&doc.text) {
@@ -568,8 +605,24 @@ impl Index {
         Ok(records)
     }
 
-    /// Embeds `embed_text` in batches and stores the quantized rows.
+    /// Embeds `embed_text` in batches and stores the quantized rows. Batches run on every core;
+    /// an embedder that serializes internally (an ort session) simply takes turns.
     pub(crate) fn embed_records(&self, records: &mut [ChunkRecord]) -> Result<()> {
+        let threads = worker_threads();
+        if threads == 1 || records.len() <= EMBED_BATCH {
+            return self.embed_range(records);
+        }
+        let per_thread = records.len().div_ceil(threads).max(EMBED_BATCH);
+        std::thread::scope(|scope| {
+            let parts: Vec<_> =
+                records.chunks_mut(per_thread).map(|part| scope.spawn(move || self.embed_range(part))).collect();
+            parts
+                .into_iter()
+                .try_for_each(|part| part.join().map_err(|_| Error::Embed("embed thread panicked".into()))?)
+        })
+    }
+
+    fn embed_range(&self, records: &mut [ChunkRecord]) -> Result<()> {
         for batch in records.chunks_mut(EMBED_BATCH) {
             let texts: Vec<String> = batch.iter().map(|r| r.prepared.embed_text.clone()).collect();
             let vectors = self.embedder.embed(&texts)?;
@@ -623,7 +676,10 @@ impl Index {
         for (index, group) in records.chunks(self.seal_every.max(1)).enumerate() {
             let last = index + 1 == groups;
             let id = self.shared.allocate_segment_id();
+            let t = std::time::Instant::now();
             segment::write_segment(&self.shared.root, id, &self.shared.config, group)?;
+            eprintln!("P write_segment {:.2}", t.elapsed().as_secs_f64());
+            let t = std::time::Instant::now();
             let sealed = Arc::new(Segment::open(&self.shared.root, id, &state.manifest)?);
             let mut rows: Vec<CatalogRow> = if last && !previous.is_empty() {
                 state
@@ -654,8 +710,11 @@ impl Index {
                 tombstones: (last && !previous.is_empty()).then(|| state.tombstones.with(previous)),
                 ..Change::default()
             };
+            eprintln!("P open+catalog+bm25 {:.2}", t.elapsed().as_secs_f64());
+            let t = std::time::Instant::now();
             let next = self.shared.publish(state, change, self.fail_before_rename)?;
             **state = Arc::new(next);
+            eprintln!("P publish {:.2}", t.elapsed().as_secs_f64());
             report.sealed.push(store::segment_name(id));
             report.epoch = state.manifest.epoch;
         }

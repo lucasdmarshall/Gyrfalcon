@@ -179,10 +179,18 @@ fn add_row(index: &usearch::Index, quantization: Quantization, key: u64, row: &[
     .map_err(vector_error)
 }
 
+/// Graphs with fewer rows than this build single-threaded and deterministically.
+pub const SINGLE_THREAD_BUILD_BELOW: usize = 10_000;
+
 /// Builds and saves `usearch.index` from quantized rows. Adds run on all cores.
 pub fn write_usearch(path: &Path, quantization: Quantization, dimension: usize, rows: &[(u64, &[u8])]) -> Result<()> {
     let index = usearch::Index::new(&options(quantization, dimension)).map_err(vector_error)?;
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(16);
+    // Small graphs build on one thread: the result is deterministic and threads would not pay.
+    let threads = if rows.len() < SINGLE_THREAD_BUILD_BELOW {
+        1
+    } else {
+        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(16)
+    };
     index.reserve_capacity_and_threads(rows.len().max(1), threads).map_err(vector_error)?;
     let per_thread = rows.len().div_ceil(threads).max(1);
     std::thread::scope(|scope| -> Result<()> {
