@@ -49,11 +49,19 @@ pub struct OrtModel {
     input_names: Vec<String>,
     /// Last dimension of the first output, `-1` when dynamic.
     output_width: i64,
+    /// Token budget enforced by the tokenizer (longest-first for pairs, keeping the final
+    /// `[SEP]`). `None` cuts each encoding at `MAX_TOKENS` after tokenizing.
+    max_tokens: Option<usize>,
 }
 
 impl OrtModel {
     /// Loads `model.onnx` (or `onnx/model.onnx`) and `tokenizer.json` from `dir`.
     pub fn load(dir: &Path) -> Result<OrtModel> {
+        OrtModel::load_with(dir, None)
+    }
+
+    /// `load` with a tokenizer-enforced token budget per input (a pair counts as one input).
+    pub fn load_with(dir: &Path, max_tokens: Option<usize>) -> Result<OrtModel> {
         let model_path = ["model.onnx", "onnx/model.onnx"]
             .iter()
             .map(|name| dir.join(name))
@@ -63,7 +71,16 @@ impl OrtModel {
         if !tokenizer_path.is_file() {
             return Err(Error::ModelUnavailable(format!("no tokenizer.json under {}", dir.display())));
         }
-        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(model_error)?;
+        let mut tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(model_error)?;
+        if let Some(max_length) = max_tokens {
+            tokenizer
+                .with_truncation(Some(tokenizers::TruncationParams {
+                    max_length,
+                    strategy: tokenizers::TruncationStrategy::LongestFirst,
+                    ..Default::default()
+                }))
+                .map_err(model_error)?;
+        }
         let session = Session::builder(environment()?)
             .map_err(model_error)?
             .with_intra_threads(intra_threads())
@@ -77,7 +94,7 @@ impl OrtModel {
             .and_then(|output| output.dtype().tensor_shape())
             .and_then(|shape| shape.last().copied())
             .unwrap_or(-1);
-        Ok(OrtModel { session: Mutex::new(session), tokenizer, input_names, output_width })
+        Ok(OrtModel { session: Mutex::new(session), tokenizer, input_names, output_width, max_tokens })
     }
 
     pub fn output_width(&self) -> i64 {
@@ -88,8 +105,10 @@ impl OrtModel {
     /// as `(shape, values)`.
     fn run<'a>(&self, inputs: Vec<EncodeInput<'a>>) -> Result<(Vec<i64>, Vec<f32>)> {
         let mut encodings = self.tokenizer.encode_batch(inputs, true).map_err(model_error)?;
-        for encoding in &mut encodings {
-            encoding.truncate(MAX_TOKENS, 0, tokenizers::TruncationDirection::Right);
+        if self.max_tokens.is_none() {
+            for encoding in &mut encodings {
+                encoding.truncate(MAX_TOKENS, 0, tokenizers::TruncationDirection::Right);
+            }
         }
         let batch = encodings.len();
         let width = encodings.iter().map(|e| e.get_ids().len()).max().unwrap_or(0).max(1);

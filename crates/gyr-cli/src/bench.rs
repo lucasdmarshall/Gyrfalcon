@@ -81,6 +81,43 @@ pub enum BenchCommand {
         #[command(flatten)]
         model: ModelArgs,
     },
+    /// Planner traces: every step's scores and timings per query, for replay (P1).
+    Trace {
+        /// BEIR dataset directories.
+        #[arg(long, num_args = 1..)]
+        dataset: Vec<PathBuf>,
+        /// Open RAG Bench text-only fixture directory, traced as dataset `orb`.
+        #[arg(long)]
+        orb_fixture: Option<PathBuf>,
+        #[arg(long, default_value = "bench/traces")]
+        out_dir: PathBuf,
+        #[arg(long, default_value_t = 100)]
+        depth: usize,
+        /// Cross-encoder model directory; without it traces carry no rerank scores.
+        #[arg(long)]
+        rerank_dir: Option<PathBuf>,
+        #[arg(long, default_value_t = 32)]
+        rerank_k: usize,
+        #[arg(long, default_value_t = 256)]
+        rerank_tokens: usize,
+        #[command(flatten)]
+        model: ModelArgs,
+    },
+    /// Replays policies over traces and reports quality, replayed latency, and paired
+    /// bootstrap intervals against a reference policy.
+    Replay {
+        #[arg(long, num_args = 1.., required = true)]
+        traces: Vec<PathBuf>,
+        #[arg(long, default_value = "validation")]
+        split: String,
+        /// lexical, dense, rrf, rescore:W, or rescore:W:K (rerank the top K).
+        #[arg(long, value_delimiter = ',', required = true)]
+        policies: Vec<String>,
+        #[arg(long)]
+        reference: Option<String>,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Embedder throughput on fixture chunks and single-query latency, without indexing.
     Embed {
         #[arg(long, default_value = "bench/fixtures/text-only")]
@@ -502,6 +539,245 @@ fn measure_ram(root: &Path, model: &ModelArgs) -> Result<Value, Error> {
     }))
 }
 
+fn read_qrels(path: &Path) -> Result<HashMap<String, gyrfalcon::bench::Qrels>, Error> {
+    let mut qrels: HashMap<String, gyrfalcon::bench::Qrels> = HashMap::new();
+    for line in std::fs::read_to_string(path)?.lines().skip(1) {
+        let mut fields = line.split('\t');
+        if let (Some(query), Some(doc), Some(score)) = (fields.next(), fields.next(), fields.next()) {
+            qrels.entry(query.to_string()).or_default().insert(doc.to_string(), score.trim().parse().unwrap_or(0));
+        }
+    }
+    Ok(qrels)
+}
+
+/// One dataset to trace: its documents and each query with its split and judgments.
+struct TraceSet {
+    name: String,
+    docs: Vec<Document>,
+    queries: Vec<(String, String, String, gyrfalcon::bench::Qrels)>,
+}
+
+/// The protocol's splits: SciFact validates on `train`, NFCorpus and FiQA on `dev`, others
+/// split `test` by query-id hash.
+fn beir_trace_set(dataset: &Path) -> Result<TraceSet, Error> {
+    let name = dataset.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let validation_file = match name.as_str() {
+        "scifact" => Some("train"),
+        "nfcorpus" | "fiqa" => Some("dev"),
+        _ => None,
+    };
+    let test = read_qrels(&dataset.join("qrels/test.tsv"))?;
+    let validation = match validation_file {
+        Some(file) => read_qrels(&dataset.join(format!("qrels/{file}.tsv")))?,
+        None => HashMap::new(),
+    };
+    let texts: HashMap<String, String> = jsonl(&dataset.join("queries.jsonl"))?
+        .iter()
+        .filter_map(|q| Some((q["_id"].as_str()?.to_string(), q["text"].as_str()?.to_string())))
+        .collect();
+    let mut queries = Vec::new();
+    for (split, judged) in [("test", &test), ("validation", &validation)] {
+        for (id, qrels) in judged {
+            let Some(text) = texts.get(id) else { continue };
+            let split = if validation_file.is_none() { gyrfalcon::planner::hash_split(id) } else { split };
+            queries.push((split.to_string(), id.clone(), text.clone(), qrels.clone()));
+        }
+    }
+    queries.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    let docs = jsonl(&dataset.join("corpus.jsonl"))?
+        .iter()
+        .map(|doc| {
+            let title = doc["title"].as_str().unwrap_or_default().trim();
+            let text = doc["text"].as_str().unwrap_or_default();
+            let body = if title.is_empty() { text.to_string() } else { format!("{title}\n\n{text}") };
+            Document::body(doc["_id"].as_str().unwrap_or_default(), body)
+        })
+        .collect();
+    Ok(TraceSet { name, docs, queries })
+}
+
+fn orb_trace_set(fixture: &Path) -> Result<TraceSet, Error> {
+    let docs = jsonl(&fixture.join("chunks.jsonl"))?
+        .iter()
+        .map(|c| Document::body(c["doc_key"].as_str().unwrap_or_default(), c["text"].as_str().unwrap_or_default()))
+        .collect();
+    let mut queries: Vec<_> = jsonl(&fixture.join("questions.jsonl"))?
+        .iter()
+        .map(|q| {
+            let id = q["query_id"].as_str().unwrap_or_default().to_string();
+            let qrels = [(q["relevant"].as_str().unwrap_or_default().to_string(), 1)].into_iter().collect();
+            (
+                gyrfalcon::planner::hash_split(&id).to_string(),
+                id,
+                q["query"].as_str().unwrap_or_default().to_string(),
+                qrels,
+            )
+        })
+        .collect();
+    queries.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    Ok(TraceSet { name: "orb".into(), docs, queries })
+}
+
+fn bench_trace(
+    datasets: &[PathBuf],
+    orb_fixture: Option<&Path>,
+    out_dir: &Path,
+    depth: usize,
+    reranker: Option<(&dyn gyrfalcon::Reranker, usize)>,
+    model: &ModelArgs,
+) -> Result<Value, Error> {
+    let mut sets = Vec::new();
+    for dataset in datasets {
+        sets.push(beir_trace_set(dataset)?);
+    }
+    if let Some(fixture) = orb_fixture {
+        sets.push(orb_trace_set(fixture)?);
+    }
+    let label = model.model_id().replace('/', "_");
+    let dir = out_dir.join(&label);
+    std::fs::create_dir_all(&dir)?;
+    let mut written = Vec::new();
+    for set in sets {
+        let collection = tempfile::tempdir()?;
+        let mut index = model.open(&collection.path().join("collection"), true)?;
+        let started = Instant::now();
+        for batch in set.docs.chunks(10_000) {
+            index.index_sections(batch)?;
+        }
+        index.wait_until_merge_idle();
+        eprintln!("{}: indexed {} docs in {:.0}s", set.name, set.docs.len(), started.elapsed().as_secs_f64());
+        let path = dir.join(format!("{}.jsonl", set.name));
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&path)?);
+        let mut test_traces = Vec::new();
+        for (done, (split, id, text, qrels)) in set.queries.iter().enumerate() {
+            let mut trace = index.trace_query(text, depth, reranker)?;
+            trace.dataset = set.name.clone();
+            trace.split = split.clone();
+            trace.query_id = id.clone();
+            trace.qrels = qrels.clone();
+            serde_json::to_writer(&mut file, &trace)?;
+            file.write_all(b"\n")?;
+            if trace.split == "test" {
+                test_traces.push((text.clone(), trace));
+            }
+            if (done + 1) % 200 == 0 {
+                eprintln!("{}: traced {}/{} queries", set.name, done + 1, set.queries.len());
+            }
+        }
+        file.flush()?;
+        let verification = verify_replay(&mut index, &test_traces)?;
+        written.push(json!({
+            "dataset": set.name,
+            "queries": set.queries.len(),
+            "path": path,
+            "replay_vs_live": verification,
+        }));
+    }
+    Ok(json!({ "model_id": model.model_id(), "traces": written }))
+}
+
+/// The protocol's replay check: on the traced index, each policy's live test nDCG@10 and
+/// p50 latency against its replay. Replay is trusted within 1% nDCG and 10% p50.
+fn verify_replay(index: &mut Index, traces: &[(String, gyrfalcon::planner::QueryTrace)]) -> Result<Value, Error> {
+    use gyrfalcon::planner::{score, summarize, Policy};
+    let configured = (index.rrf_weights, index.fusion);
+    let mut rows = Vec::new();
+    for (spec, weights, fusion) in [
+        ("lexical", [1.0, 0.0], Fusion::Rrf),
+        ("dense", [0.0, 1.0], Fusion::Rrf),
+        ("rrf", [1.0, 1.0], Fusion::Rrf),
+        ("rescore:0.2", [1.0, 1.0], Fusion::Rescore { dense_weight: 0.2 }),
+        ("rescore:0.5", [1.0, 1.0], Fusion::Rescore { dense_weight: 0.5 }),
+    ] {
+        index.rrf_weights = weights;
+        index.fusion = fusion;
+        let (mut ndcg, mut millis) = (0.0, Vec::with_capacity(traces.len()));
+        for (text, trace) in traces {
+            let started = Instant::now();
+            let hits = index.retrieve(text, RetrieveOptions { rerank: false, limit: 100 })?;
+            millis.push(started.elapsed().as_secs_f64() * 1000.0);
+            let ranked: Vec<String> =
+                gyrfalcon::bench::dedupe_doc_keys(&hits.hits.iter().map(|h| h.doc_id.clone()).collect::<Vec<_>>())
+                    .into_iter()
+                    .filter(|doc| *doc != trace.query_id)
+                    .collect();
+            ndcg += gyrfalcon::bench::ndcg_at(&ranked, &trace.qrels, 10);
+        }
+        let live_ndcg = ndcg / traces.len().max(1) as f64;
+        let live = LatencyColumn::from_samples(1, millis, 0.0, &[]);
+        let policy = Policy::parse(spec).unwrap();
+        let replayed = summarize(&traces.iter().map(|(_, t)| score(t, policy)).collect::<Vec<_>>());
+        let ndcg_ok = (replayed.ndcg_at_10 - live_ndcg).abs() <= 0.01 * live_ndcg.max(1e-9);
+        // Live lexical-only and dense-only still run both legs, so only fused policies compare.
+        let p50_ok = (replayed.p50_ms - live.p50_ms).abs() <= 0.10 * live.p50_ms.max(1e-9) || !spec.starts_with('r');
+        eprintln!(
+            "  {spec}: live nDCG {live_ndcg:.4} replay {:.4}; live p50 {:.3} ms replay {:.3} ms",
+            replayed.ndcg_at_10, live.p50_ms, replayed.p50_ms
+        );
+        rows.push(json!({
+            "policy": spec,
+            "live_ndcg_at_10": live_ndcg,
+            "replay_ndcg_at_10": replayed.ndcg_at_10,
+            "live_p50_ms": live.p50_ms,
+            "replay_p50_ms": replayed.p50_ms,
+            "ndcg_within_1pct": ndcg_ok,
+            "p50_within_10pct": p50_ok,
+        }));
+    }
+    (index.rrf_weights, index.fusion) = configured;
+    Ok(Value::Array(rows))
+}
+
+fn bench_replay(
+    traces: &[PathBuf],
+    split: &str,
+    policies: &[String],
+    reference_spec: Option<&str>,
+) -> Result<Value, Error> {
+    use gyrfalcon::planner::{paired_bootstrap, score, summarize, Policy, QueryTrace};
+    let parse = |spec: &str| Policy::parse(spec).ok_or_else(|| other(format!("unknown policy {spec}")));
+    let reference = reference_spec.map(parse).transpose()?;
+    let mut datasets = Vec::new();
+    for path in traces {
+        let mut by_dataset: HashMap<String, Vec<QueryTrace>> = HashMap::new();
+        for line in std::fs::read_to_string(path)?.lines().filter(|l| !l.trim().is_empty()) {
+            let trace: QueryTrace = serde_json::from_str(line)?;
+            if trace.split == split {
+                by_dataset.entry(trace.dataset.clone()).or_default().push(trace);
+            }
+        }
+        let mut names: Vec<_> = by_dataset.keys().cloned().collect();
+        names.sort();
+        for name in names {
+            let set = &by_dataset[&name];
+            let reference_scores: Option<Vec<f64>> =
+                reference.map(|p| set.iter().map(|t| score(t, p).ndcg_at_10).collect());
+            let mut rows = Vec::new();
+            for spec in policies {
+                let policy = parse(spec)?;
+                let scores: Vec<_> = set.iter().map(|t| score(t, policy)).collect();
+                let mut row = serde_json::to_value(summarize(&scores))?;
+                row["policy"] = json!(spec);
+                if let Some(base) = &reference_scores {
+                    let ndcg: Vec<f64> = scores.iter().map(|s| s.ndcg_at_10).collect();
+                    let (mean, low, high) = paired_bootstrap(&ndcg, base, 10_000, 1);
+                    row["ndcg_vs_reference"] =
+                        json!({ "mean": mean, "low": low, "high": high, "significant": low > 0.0 || high < 0.0 });
+                }
+                rows.push(row);
+            }
+            datasets.push(json!({
+                "dataset": name,
+                "split": split,
+                "queries": set.len(),
+                "reference": reference_spec,
+                "policies": rows,
+            }));
+        }
+    }
+    Ok(json!({ "datasets": datasets }))
+}
+
 /// `[lexical, dense]` RRF weights and fusion for one `--fusions` entry.
 fn parse_fusion(spec: &str, configured: Fusion) -> Result<([f32; 2], Fusion), Error> {
     let weight = |text: &str| text.parse::<f32>().map_err(|_| other(format!("bad fusion weight in {spec}")));
@@ -869,6 +1145,17 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
         }
         BenchCommand::Beir { dataset, split, fusions, depth, rerank, out, model } => {
             emit(&bench_beir(&dataset, &split, &fusions, depth, rerank, &model, out.as_deref())?, out.as_deref())
+        }
+        BenchCommand::Trace { dataset, orb_fixture, out_dir, depth, rerank_dir, rerank_k, rerank_tokens, model } => {
+            let reranker = match &rerank_dir {
+                Some(dir) => Some(gyrfalcon::OrtReranker::from_dir_with_max_tokens(dir, rerank_tokens)?),
+                None => None,
+            };
+            let reranker = reranker.as_ref().map(|r| (r as &dyn gyrfalcon::Reranker, rerank_k));
+            emit(&bench_trace(&dataset, orb_fixture.as_deref(), &out_dir, depth, reranker, &model)?, None)
+        }
+        BenchCommand::Replay { traces, split, policies, reference, out } => {
+            emit(&bench_replay(&traces, &split, &policies, reference.as_deref())?, out.as_deref())
         }
         BenchCommand::Embed { fixture, chunks, batch, queries, out, model } => {
             emit(&bench_embed(&fixture, chunks, batch, queries, &model)?, out.as_deref())

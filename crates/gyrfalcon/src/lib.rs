@@ -16,6 +16,7 @@ mod lexical;
 mod manifest;
 mod merge;
 mod ort_session;
+pub mod planner;
 mod prepare;
 mod rerank;
 mod retrieve;

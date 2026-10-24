@@ -34,6 +34,11 @@ impl OrtReranker {
     pub fn from_dir(dir: &Path) -> Result<OrtReranker> {
         Ok(OrtReranker { model: OrtModel::load(dir)? })
     }
+
+    /// Scores each `(query, body)` pair within `max_tokens`, cutting the longer side first.
+    pub fn from_dir_with_max_tokens(dir: &Path, max_tokens: usize) -> Result<OrtReranker> {
+        Ok(OrtReranker { model: OrtModel::load_with(dir, Some(max_tokens))? })
+    }
 }
 
 impl Reranker for OrtReranker {
