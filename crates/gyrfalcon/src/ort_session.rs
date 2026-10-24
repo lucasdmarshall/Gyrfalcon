@@ -85,6 +85,9 @@ impl OrtModel {
             .map_err(model_error)?
             .with_intra_threads(intra_threads())
             .map_err(model_error)?
+            // Idle ort threads would otherwise spin on the cores retrieval needs.
+            .with_intra_op_spinning(false)
+            .map_err(model_error)?
             .commit_from_file(&model_path)
             .map_err(model_error)?;
         let input_names = session.inputs().iter().map(|input| input.name().to_string()).collect();
