@@ -186,13 +186,15 @@ pub struct IngestReport {
     pub rows: Vec<IngestRow>,
 }
 
-pub const RAM_KEYS: [&str; 8] = [
+pub const RAM_KEYS: [&str; 10] = [
     "usearch_bytes",
     "vectors_bin_bytes",
     "tantivy_bytes",
     "catalog_bytes",
     "tombstone_bytes",
     "bm25_bytes",
+    "rss_baseline",
+    "rss_index_open",
     "rss_model_loaded",
     "rss_model_dropped",
 ];

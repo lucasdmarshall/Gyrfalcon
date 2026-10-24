@@ -228,15 +228,8 @@ impl ModelArgs {
         })
     }
 
-    /// Opens (or creates) the collection with the process config, then loads the models.
-    /// The open gate runs before any model is loaded.
-    pub fn open(&self, dir: &Path, create: bool) -> Result<Index, Error> {
-        let config = self.config();
-        let mut index = if create && !dir.join("manifest.json").exists() {
-            Index::create(dir, &config)?
-        } else {
-            Index::open(dir, &config)?
-        };
+    /// Loads the embedder the process config names and checks its width.
+    pub fn load_embedder(&self, config: &IndexConfig) -> Result<Box<dyn Embedder>, Error> {
         let model_dir = self.model_dir();
         let embedder: Box<dyn Embedder> = match self.embedder() {
             EmbedderKind::Hash => Box::new(HashEmbedder::new(config.dimension)),
@@ -267,6 +260,19 @@ impl ModelArgs {
                 requested_value: embedder.dimension().to_string(),
             });
         }
+        Ok(embedder)
+    }
+
+    /// Opens (or creates) the collection with the process config, then loads the models.
+    /// The open gate runs before any model is loaded.
+    pub fn open(&self, dir: &Path, create: bool) -> Result<Index, Error> {
+        let config = self.config();
+        let mut index = if create && !dir.join("manifest.json").exists() {
+            Index::create(dir, &config)?
+        } else {
+            Index::open(dir, &config)?
+        };
+        let embedder = self.load_embedder(&config)?;
         index.set_embedder(embedder);
         index.rrf_weights = [self.lexical_weight, self.dense_weight];
         index.fusion = self.fusion();

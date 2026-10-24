@@ -102,6 +102,9 @@ pub enum BenchCommand {
     Ram {
         #[arg(long, default_value_t = 1_000_000)]
         vectors: usize,
+        /// Internal: measure RSS of this already-built collection in a fresh process.
+        #[arg(long, hide = true)]
+        measure_collection: Option<PathBuf>,
         #[arg(long)]
         out: Option<PathBuf>,
         #[command(flatten)]
@@ -456,20 +459,47 @@ fn bench_ram(vectors: usize, model: &ModelArgs) -> Result<Value, Error> {
             left -= n;
         }
     }
-    // Open the index, then load the model.
-    let mut index = model.open(&root, false)?;
+    // RSS is measured in a fresh process, so memory the build used does not count.
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    args.push("--measure-collection".into());
+    args.push(root.to_string_lossy().into_owned());
+    let output = std::process::Command::new(std::env::current_exe()?).args(&args).output()?;
+    if !output.status.success() {
+        return Err(other(format!("RSS measurement failed: {}", String::from_utf8_lossy(&output.stderr))));
+    }
+    let measured: Value = serde_json::from_slice(&output.stdout)?;
+    let config = model.config();
+    let mut report = collection_bytes(&root);
+    for key in ["rss_baseline", "rss_index_open", "rss_model_loaded", "rss_model_dropped"] {
+        report.insert(key.into(), measured[key].clone());
+    }
+    report.insert("vectors".into(), json!(vectors));
+    report.insert("tombstone_count".into(), json!(0));
+    report.insert("vector_payload_planning_bytes".into(), json!(vectors as u64 * config.dimension as u64));
+    report.insert("environment".into(), serde_json::to_value(BenchEnvironment::detect(&config))?);
+    Ok(Value::Object(report))
+}
+
+/// Child side of `gyr bench ram`: open the collection without a model, retrieve, then load and
+/// drop the model, reading RSS after each step.
+fn measure_ram(root: &Path, model: &ModelArgs) -> Result<Value, Error> {
+    let baseline = rss_bytes();
+    let config = model.config();
+    let mut index = Index::open(root, &config)?;
+    index.set_embedder(Box::new(HashEmbedder::new(config.dimension)));
+    index.retrieve("ram", RetrieveOptions { rerank: false, limit: 10 })?;
+    let index_open = rss_bytes();
+    index.set_embedder(model.load_embedder(&config)?);
     index.retrieve("ram", RetrieveOptions { rerank: false, limit: 10 })?;
     let loaded = rss_bytes();
-    index.set_embedder(Box::new(HashEmbedder::new(index.config().dimension)));
+    index.set_embedder(Box::new(HashEmbedder::new(config.dimension)));
     let dropped = rss_bytes();
-    let mut report = collection_bytes(&root);
-    report.insert("rss_model_loaded".into(), json!(loaded));
-    report.insert("rss_model_dropped".into(), json!(dropped));
-    report.insert("vectors".into(), json!(vectors));
-    report.insert("tombstone_count".into(), json!(index.tombstone_len()));
-    report.insert("vector_payload_planning_bytes".into(), json!(vectors as u64 * index.config().dimension as u64));
-    report.insert("environment".into(), serde_json::to_value(BenchEnvironment::detect(index.config()))?);
-    Ok(Value::Object(report))
+    Ok(json!({
+        "rss_baseline": baseline,
+        "rss_index_open": index_open,
+        "rss_model_loaded": loaded,
+        "rss_model_dropped": dropped,
+    }))
 }
 
 /// `[lexical, dense]` RRF weights and fusion for one `--fusions` entry.
@@ -831,7 +861,11 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
         BenchCommand::Embed { fixture, chunks, batch, queries, out, model } => {
             emit(&bench_embed(&fixture, chunks, batch, queries, &model)?, out.as_deref())
         }
-        BenchCommand::Ram { vectors, out, model } => emit(&bench_ram(vectors, &model)?, out.as_deref()),
+        BenchCommand::Ram { measure_collection: Some(root), model, .. } => {
+            println!("{}", measure_ram(&root, &model)?);
+            Ok(())
+        }
+        BenchCommand::Ram { vectors, out, model, .. } => emit(&bench_ram(vectors, &model)?, out.as_deref()),
         BenchCommand::Accuracy {
             prepare,
             compare,

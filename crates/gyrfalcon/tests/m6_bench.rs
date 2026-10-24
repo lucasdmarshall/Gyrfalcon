@@ -113,6 +113,7 @@ fn bench_ram_fills_the_byte_counts() {
     assert!(report["usearch_bytes"].as_u64().unwrap() > 0);
     assert!(report["tantivy_bytes"].as_u64().unwrap() > 0);
     assert!(report["rss_model_loaded"].as_u64().unwrap() > 0);
+    assert!(report["rss_index_open"].as_u64().unwrap() >= report["rss_baseline"].as_u64().unwrap());
     assert_eq!(report["tombstone_count"], 0);
 }
 
