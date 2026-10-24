@@ -255,3 +255,17 @@ fn rescore_gives_lexical_only_hits_their_exact_similarity() {
     index.fusion = gyrfalcon::Fusion::Score { dense_weight: 0.3 };
     assert_eq!(index.retrieve("term", RetrieveOptions { rerank: false, limit: 10 }).unwrap().chunk_ids.len(), 10);
 }
+
+#[test]
+fn many_concurrent_searches_wait_for_a_slot_instead_of_failing() {
+    let (_dir, index) = ninety_dead_of_100(&IndexConfig::test_default());
+    std::thread::scope(|scope| {
+        for _ in 0..96 {
+            scope.spawn(|| {
+                for _ in 0..20 {
+                    assert_eq!(index.vector_search(&unit(384, 0, 1.0), 10).unwrap().ids.len(), 10);
+                }
+            });
+        }
+    });
+}

@@ -1,0 +1,38 @@
+{
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "0bedb970cc02185c66e342916d999060858a83a9",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "rows": [
+    {
+      "auto_merge": true,
+      "chunks": 160000,
+      "chunks_per_sec": 1291.0506689614497,
+      "contextual_prefix": false,
+      "docs_per_sec": 0.12910506689614495,
+      "files": 16,
+      "headline": true,
+      "merge_wall_seconds": 29.639401344000007,
+      "seal_wall_seconds": 94.290668828,
+      "segment_count": 2
+    },
+    {
+      "auto_merge": false,
+      "chunks": 160000,
+      "chunks_per_sec": 1941.4032234398705,
+      "contextual_prefix": false,
+      "docs_per_sec": 0.19414032234398707,
+      "files": 16,
+      "headline": false,
+      "merge_wall_seconds": 5.727999990767785e-6,
+      "seal_wall_seconds": 82.414609674,
+      "segment_count": 16
+    }
+  ]
+}

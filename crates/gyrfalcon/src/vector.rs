@@ -1,7 +1,7 @@
 //! The dense leg: one USearch HNSW file per segment, searched with a live-id predicate.
 
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Condvar, Mutex, RwLock};
 
 use usearch::{b1x8, IndexOptions, MetricKind, ScalarKind};
 
@@ -228,9 +228,43 @@ pub struct VectorHits {
     pub step: FallbackStep,
 }
 
+/// Concurrent searches one segment admits; later ones wait for a free slot.
+pub const SEARCH_SLOTS: usize = 64;
+
+struct Slots {
+    free: Mutex<usize>,
+    released: Condvar,
+}
+
+struct SlotGuard<'a>(&'a Slots);
+
+impl Slots {
+    fn new(count: usize) -> Slots {
+        Slots { free: Mutex::new(count), released: Condvar::new() }
+    }
+
+    fn take(&self) -> SlotGuard<'_> {
+        let mut free = self.free.lock().unwrap_or_else(|p| p.into_inner());
+        while *free == 0 {
+            free = self.released.wait(free).unwrap_or_else(|p| p.into_inner());
+        }
+        *free -= 1;
+        SlotGuard(self)
+    }
+}
+
+impl Drop for SlotGuard<'_> {
+    fn drop(&mut self) {
+        *self.0.free.lock().unwrap_or_else(|p| p.into_inner()) += 1;
+        self.0.released.notify_one();
+    }
+}
+
 /// A sealed segment's USearch file, viewed from disk.
 pub struct VectorSegment {
     index: RwLock<usearch::Index>,
+    /// Searches beyond USearch's reserved thread slots wait here instead of failing.
+    slots: Slots,
     quantization: Quantization,
     dimension: usize,
     vectors_path: PathBuf,
@@ -241,7 +275,12 @@ pub struct VectorSegment {
 impl VectorSegment {
     pub fn open(dir: &Path, quantization: Quantization, dimension: usize) -> Result<VectorSegment> {
         let path = dir.join("usearch.index");
-        let index = usearch::Index::restore_view(&path.to_string_lossy()).map_err(vector_error)?;
+        let path = path.to_string_lossy();
+        let meta = usearch::Index::metadata(&path).map_err(vector_error)?;
+        let index = usearch::Index::new(&meta.into()).map_err(vector_error)?;
+        // A view keeps the thread slots reserved before it; each search holds one.
+        index.reserve_capacity_and_threads(1, SEARCH_SLOTS).map_err(vector_error)?;
+        index.view(&path).map_err(vector_error)?;
         index.change_expansion_search(EXPANSION_SEARCH);
         let vectors_path = dir.join("vectors.bin");
         let mapped = if quantization == Quantization::B1 {
@@ -251,7 +290,14 @@ impl VectorSegment {
         } else {
             None
         };
-        Ok(VectorSegment { index: RwLock::new(index), quantization, dimension, vectors_path, mapped })
+        Ok(VectorSegment {
+            index: RwLock::new(index),
+            slots: Slots::new(SEARCH_SLOTS),
+            quantization,
+            dimension,
+            vectors_path,
+            mapped,
+        })
     }
 
     /// The stored vector of `key` as `f32`, scaled as stored. Binary mode reads the mapped
@@ -321,6 +367,7 @@ impl VectorSegment {
         }
         let count = if self.quantization == Quantization::B1 { want.max(BINARY_RESCORE_WIDTH) } else { want };
         let target = count.min(live_count);
+        let _slot = self.slots.take();
         let mut hits = {
             let index = self.index.read().unwrap_or_else(|p| p.into_inner());
             self.filtered(&index, query, count, live)?

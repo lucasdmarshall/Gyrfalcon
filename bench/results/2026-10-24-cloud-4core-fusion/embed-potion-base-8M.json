@@ -1,0 +1,19 @@
+{
+  "batch": 32,
+  "chunks": 2000,
+  "chunks_per_sec": 1381.751709511851,
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 256,
+    "git_revision": "0bedb970cc02185c66e342916d999060858a83a9",
+    "model_id": "minishlab/potion-base-8M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "mean_chunk_bytes": 4531.9415,
+  "queries": 500,
+  "query_p50_ms": 0.028227,
+  "query_p99_ms": 0.080165
+}

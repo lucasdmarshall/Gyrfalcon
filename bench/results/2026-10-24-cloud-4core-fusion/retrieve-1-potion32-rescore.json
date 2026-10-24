@@ -1,0 +1,103 @@
+{
+  "chunks": 20000,
+  "concurrent": [
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 4,
+      "p50_ms": 1.073821,
+      "p99_ms": 3.608703,
+      "qps": 3349.075584975413
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 16,
+      "p50_ms": 3.472864,
+      "p99_ms": 21.598928,
+      "qps": 3141.1886654956484
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 32,
+      "p50_ms": 7.942785000000001,
+      "p99_ms": 44.039503,
+      "qps": 2917.7680925124355
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "0bedb970cc02185c66e342916d999060858a83a9",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "fallback_pct": {
+    "1024": 0.0,
+    "128": 0.0,
+    "256": 0.0,
+    "512": 0.0,
+    "64": 100.0,
+    "exact": 0.0
+  },
+  "rerank": false,
+  "segment_count": 1,
+  "single_flight": {
+    "fallback_pct": {
+      "1024": 0.0,
+      "128": 0.0,
+      "256": 0.0,
+      "512": 0.0,
+      "64": 100.0,
+      "exact": 0.0
+    },
+    "in_flight": 1,
+    "p50_ms": 0.7166819999999999,
+    "p99_ms": 1.8082479999999999,
+    "qps": 1302.4763436985152
+  },
+  "time_to_request": {
+    "columns": [
+      {
+        "fallback_pct": {},
+        "in_flight": 1,
+        "p50_ms": 0.737924,
+        "p99_ms": 1.803844,
+        "qps": 1229.0409390304412
+      },
+      {
+        "fallback_pct": {},
+        "in_flight": 16,
+        "p50_ms": 3.069207,
+        "p99_ms": 30.764129,
+        "qps": 787.7868236502704
+      }
+    ],
+    "llm": "discarded"
+  },
+  "timed": 1000,
+  "tombstone_count": 0,
+  "warmup": 200
+}

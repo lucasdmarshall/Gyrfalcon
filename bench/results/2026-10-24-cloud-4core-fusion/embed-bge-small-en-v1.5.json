@@ -1,0 +1,19 @@
+{
+  "batch": 32,
+  "chunks": 2000,
+  "chunks_per_sec": 8.186000872597225,
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 384,
+    "git_revision": "0bedb970cc02185c66e342916d999060858a83a9",
+    "model_id": "BAAI/bge-small-en-v1.5",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "mean_chunk_bytes": 4531.9415,
+  "queries": 500,
+  "query_p50_ms": 4.852606,
+  "query_p99_ms": 9.138608
+}

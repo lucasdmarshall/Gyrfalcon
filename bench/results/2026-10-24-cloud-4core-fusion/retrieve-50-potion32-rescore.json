@@ -1,0 +1,84 @@
+{
+  "chunks": 20000,
+  "concurrent": [
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 4,
+      "p50_ms": 4.414464,
+      "p99_ms": 8.675889000000002,
+      "qps": 851.2479710238596
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 16,
+      "p50_ms": 14.382209,
+      "p99_ms": 53.904671,
+      "qps": 951.3296307577763
+    },
+    {
+      "fallback_pct": {
+        "1024": 0.0,
+        "128": 0.0,
+        "256": 0.0,
+        "512": 0.0,
+        "64": 100.0,
+        "exact": 0.0
+      },
+      "in_flight": 32,
+      "p50_ms": 24.057097,
+      "p99_ms": 157.201494,
+      "qps": 846.2275321322452
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v1",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "0bedb970cc02185c66e342916d999060858a83a9",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  },
+  "fallback_pct": {
+    "1024": 0.0,
+    "128": 0.0,
+    "256": 0.0,
+    "512": 0.0,
+    "64": 100.0,
+    "exact": 0.0
+  },
+  "rerank": false,
+  "segment_count": 50,
+  "single_flight": {
+    "fallback_pct": {
+      "1024": 0.0,
+      "128": 0.0,
+      "256": 0.0,
+      "512": 0.0,
+      "64": 100.0,
+      "exact": 0.0
+    },
+    "in_flight": 1,
+    "p50_ms": 3.163438,
+    "p99_ms": 4.743575,
+    "qps": 309.33162443696074
+  },
+  "timed": 1000,
+  "tombstone_count": 0,
+  "warmup": 200
+}
