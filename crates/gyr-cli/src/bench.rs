@@ -656,6 +656,7 @@ fn bench_trace(
             trace.qrels = qrels.clone();
             traces.push(trace);
         }
+        calibrate_overhead(&mut index, &set.queries, &mut traces)?;
         let test_traces: Vec<(String, gyrfalcon::planner::QueryTrace)> = set
             .queries
             .iter()
@@ -688,6 +689,38 @@ fn bench_trace(
         }));
     }
     Ok(json!({ "model_id": model.model_id(), "traces": written }))
+}
+
+/// Sets every trace's fixed per-call overhead to the median gap between a live retrieve and
+/// its replayed steps, measured on validation queries only.
+fn calibrate_overhead(
+    index: &mut Index,
+    queries: &[(String, String, String, gyrfalcon::bench::Qrels)],
+    traces: &mut [gyrfalcon::planner::QueryTrace],
+) -> Result<(), Error> {
+    use gyrfalcon::planner::{replay, Policy};
+    let configured = (index.rrf_weights, index.fusion);
+    index.rrf_weights = [1.0, 1.0];
+    index.fusion = Fusion::Rescore { dense_weight: 0.2 };
+    let mut gaps = Vec::new();
+    for ((split, _, text, _), trace) in queries.iter().zip(traces.iter()) {
+        if split != "validation" {
+            continue;
+        }
+        let started = Instant::now();
+        index.retrieve(text, RetrieveOptions { rerank: false, limit: 100 })?;
+        let live = started.elapsed().as_secs_f64() * 1000.0;
+        let (_, steps) = replay(trace, Policy::Rescore { dense_weight: 0.2, rerank_k: 0 }, 100);
+        gaps.push(live - steps);
+    }
+    (index.rrf_weights, index.fusion) = configured;
+    gaps.sort_by(|a, b| a.total_cmp(b));
+    let overhead = gyrfalcon::bench::percentile(&gaps, 50.0).max(0.0);
+    eprintln!("  calibrated overhead {overhead:.3} ms from {} validation queries", gaps.len());
+    for trace in traces.iter_mut() {
+        trace.timings.overhead = overhead;
+    }
+    Ok(())
 }
 
 /// The protocol's replay check: on the traced index, each policy's live test nDCG@10 and
