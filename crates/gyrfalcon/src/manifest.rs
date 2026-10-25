@@ -8,7 +8,7 @@ use crate::store;
 /// 5: segments hold `keys.bin` instead of a collection catalog; 4 derives BM25 statistics from
 /// segment dictionaries; 3 added dense `codes.bin`; 2 held a USearch graph; 1 held Tantivy.
 pub const FORMAT_VERSION: u32 = 5;
-pub const ANALYZER_ID: &str = "gyr-text-v1";
+pub const ANALYZER_ID: &str = "gyr-text-v2";
 pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-small-en-v1.5";
 pub const DEFAULT_DIMENSION: u32 = 384;
 /// The static (Model2Vec) embedder of the lite tier.

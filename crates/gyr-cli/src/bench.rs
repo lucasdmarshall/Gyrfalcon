@@ -848,6 +848,12 @@ fn parse_fusion(spec: &str, configured: Fusion) -> Result<([f32; 2], Fusion), Er
     })
 }
 
+/// Where `bench_beir` keeps its report (after each dataset) and its ranked lists.
+struct BeirOutputs<'a> {
+    report: Option<&'a Path>,
+    runs: Option<&'a Path>,
+}
+
 fn bench_beir(
     datasets: &[PathBuf],
     split: &str,
@@ -855,8 +861,7 @@ fn bench_beir(
     depth: usize,
     rerank: bool,
     model: &ModelArgs,
-    out: Option<&Path>,
-    run_dir: Option<&Path>,
+    outputs: BeirOutputs,
 ) -> Result<Value, Error> {
     let mut results = Vec::new();
     let mut environment = None;
@@ -925,7 +930,7 @@ fn bench_beir(
                 recall += gyrfalcon::bench::recall_at(&ranked, judged, 100);
                 mrr += gyrfalcon::bench::mrr_at(&ranked, judged, 10);
             }
-            if let Some(run_dir) = run_dir {
+            if let Some(run_dir) = outputs.runs {
                 std::fs::create_dir_all(run_dir)?;
                 std::fs::write(run_dir.join(format!("{name}-{}.tsv", spec.replace(':', "_"))), run)?;
             }
@@ -952,7 +957,7 @@ fn bench_beir(
             "results": rows,
         }));
         // Keep finished datasets on disk if a later one is interrupted.
-        if let Some(path) = out {
+        if let Some(path) = outputs.report {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -1209,8 +1214,8 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
             emit(&bench_ingest(files, chunks_per_file, &model)?, out.as_deref())
         }
         BenchCommand::Beir { dataset, split, fusions, depth, rerank, out, run_dir, model } => {
-            let report =
-                bench_beir(&dataset, &split, &fusions, depth, rerank, &model, out.as_deref(), run_dir.as_deref())?;
+            let outputs = BeirOutputs { report: out.as_deref(), runs: run_dir.as_deref() };
+            let report = bench_beir(&dataset, &split, &fusions, depth, rerank, &model, outputs)?;
             emit(&report, out.as_deref())
         }
         BenchCommand::Trace { dataset, orb_fixture, out_dir, depth, rerank_dir, rerank_k, rerank_tokens, model } => {

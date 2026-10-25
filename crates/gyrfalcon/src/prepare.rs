@@ -1,4 +1,5 @@
-//! `prepare`, the only normalizer, and the `gyr-text-v1` token rules.
+//! `prepare`, the only normalizer, and the `gyr-text-v2` analyzer: the `gyr-text-v1` token
+//! rules, then English stopword removal and Snowball English stemming of ASCII words.
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -19,7 +20,7 @@ pub struct Token {
 pub struct PreparedText {
     /// NFC, trimmed, original case. This is what the embedder receives.
     pub embed_text: String,
-    /// `gyr-text-v1` analyzer output of `embed_text`.
+    /// `gyr-text-v2` analyzer output of `embed_text`.
     pub tokens: Vec<Token>,
 }
 
@@ -47,18 +48,42 @@ fn is_word_char(c: char) -> bool {
     )
 }
 
-/// NFC-normalizes and trims `source` without changing case, then tokenizes it.
+/// NFC-normalizes and trims `source` without changing case, then analyzes it.
 pub fn prepare(source: &str) -> PreparedText {
     let embed_text = nfc_trim(source);
-    let tokens = tokenize(&embed_text);
+    let tokens = analyze(tokenize(&embed_text));
     PreparedText { embed_text, tokens }
 }
 
 /// `prepare` for a chunk with a contextual prefix: prefix, a blank line, then the body.
 pub fn prepare_with_prefix(prefix: &str, body: &str) -> PreparedText {
     let embed_text = format!("{}\n\n{}", nfc_trim(prefix), nfc_trim(body));
-    let tokens = tokenize(&embed_text);
+    let tokens = analyze(tokenize(&embed_text));
     PreparedText { embed_text, tokens }
+}
+
+/// Lucene's English stop set, sorted.
+const STOPWORDS: [&str; 33] = [
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into", "is", "it", "no", "not", "of",
+    "on", "or", "such", "that", "the", "their", "then", "there", "these", "they", "this", "to", "was", "will", "with",
+];
+
+/// `gyr-text-v2` on `gyr-text-v1` tokens: drops English stopwords and Snowball-stems words of
+/// ASCII letters only, so other scripts, numbers, and identifiers such as `e0308` keep their
+/// v1 form. Positions are renumbered over the surviving tokens.
+pub fn analyze(mut tokens: Vec<Token>) -> Vec<Token> {
+    static STEMMER: std::sync::LazyLock<frostem::Stemmer> =
+        std::sync::LazyLock::new(|| frostem::Stemmer::new(frostem::Algorithm::English));
+    tokens.retain(|token| STOPWORDS.binary_search(&token.text.as_str()).is_err());
+    for (position, token) in tokens.iter_mut().enumerate() {
+        token.position = position;
+        if token.text.bytes().all(|b| b.is_ascii_lowercase()) {
+            if let std::borrow::Cow::Owned(stem) = STEMMER.stem(&token.text) {
+                token.text = stem;
+            }
+        }
+    }
+    tokens
 }
 
 fn nfc_trim(source: &str) -> String {

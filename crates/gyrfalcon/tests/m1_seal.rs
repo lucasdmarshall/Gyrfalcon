@@ -53,8 +53,8 @@ fn open_rejects_dimension_mismatch_without_mapping() {
 #[test]
 fn open_rejects_analyzer_mismatch_without_mapping() {
     let mut other = IndexConfig::test_default();
-    other.analyzer_id = "gyr-text-v2".into();
-    assert_mismatch(other, IncompatibleField::AnalyzerId, "gyr-text-v1", "gyr-text-v2");
+    other.analyzer_id = "gyr-text-v1".into();
+    assert_mismatch(other, IncompatibleField::AnalyzerId, "gyr-text-v2", "gyr-text-v1");
 }
 
 #[test]
@@ -97,9 +97,10 @@ fn prepare_lowercases_words_and_keeps_embed_case() {
     assert_eq!(prepared.embed_text, "Memory safety in Rust မြန်မာ E0308");
     assert_eq!(
         prepared.tokens.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
-        vec!["memory", "safety", "in", "rust", "မြန်မာ", "e0308"]
+        vec!["memori", "safeti", "rust", "မြန်မာ", "e0308"]
     );
-    assert_eq!(prepared.tokens.iter().map(|t| t.position).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4, 5]);
+    // `in` is a stopword; positions count the surviving tokens.
+    assert_eq!(prepared.tokens.iter().map(|t| t.position).collect::<Vec<_>>(), vec![0, 1, 2, 3, 4]);
     let only_emoji = gyrfalcon::prepare("😀");
     assert!(only_emoji.tokens.is_empty());
 }
@@ -109,7 +110,7 @@ fn prepare_normalizes_trims_and_drops_long_pieces() {
     let prepared = gyrfalcon::prepare("  Cafe\u{301} \t error E0308  ");
     assert_eq!(prepared.embed_text, "Café \t error E0308");
     let long = "x".repeat(41);
-    let kept = "y".repeat(40);
+    let kept = "7".repeat(40);
     let prepared = gyrfalcon::prepare(&format!("{long} {kept}"));
     assert_eq!(prepared.tokens.len(), 1);
     assert_eq!(prepared.tokens[0].text, kept);

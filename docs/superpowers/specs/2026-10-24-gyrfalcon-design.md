@@ -708,3 +708,19 @@ the `catalog/` directory, and the RAM report's `catalog_bytes` are gone.
 
 FiQA added in calls of 100 documents: 11.9 s to 8.8 s (22.8 s before format 4); in calls of
 10,000: 3.1 s to 2.5 s. What remains per call is mostly the new segment directory's fsyncs.
+
+### Analyzer `gyr-text-v2`: English stopwords and Snowball stemming
+
+`gyr-text-v2` is `gyr-text-v1` tokenization followed by two steps. Lucene's 33 English
+stopwords are dropped. A token made only of ASCII letters is replaced by its Snowball English
+stem (the `frostem` crate, BSD-3). Other tokens keep their v1 form, so Myanmar and other scripts,
+numbers, and identifiers such as `e0308` are unchanged. Positions count the surviving tokens.
+`collection_doc_freq` analyzes its argument, so `safety` reports the stem `safeti`.
+
+The head-to-head (`bench/results/2026-10-25-cloud-4core-h2h/`) showed the other frameworks'
+stemmed BM25 ahead of v1. BM25-only nDCG@10, lite tier, BEIR test: SciFact 0.6611 to 0.6859,
+NFCorpus 0.3088 to 0.3237, FiQA 0.2373 to 0.2504, ArguAna 0.4052 to 0.4033. With the default
+fusion (rescore, dense weight 0.2) the four are 0.6980, 0.3340, 0.4575, and 0.2605. The default
+dense weight is re-chosen on validation splits, not on these test numbers.
+
+An index built with `gyr-text-v1` fails to open with `IncompatibleIndex` on `analyzer_id`.

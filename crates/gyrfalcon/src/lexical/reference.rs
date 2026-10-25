@@ -225,17 +225,18 @@ fn postings_follow_the_prepared_tokens() {
     let dir = tempfile::tempdir().unwrap();
     let built = write(dir.path(), &chunks).unwrap();
     let segment = LexicalSegment::open(dir.path()).unwrap();
-    assert_eq!(segment.postings("memory"), vec![(0, 1)]);
+    // gyr-text-v2: `memory` is stored as its stem and `in` is a stopword.
+    assert_eq!(segment.postings("memori"), vec![(0, 1)]);
     assert_eq!(segment.postings("e0308"), vec![(2, 1)]);
     assert_eq!(segment.postings("rust"), vec![(0, 1), (5, 3)]);
     assert_eq!(segment.postings("မြန်မာ"), vec![(1, 1)]);
-    for absent in ["Memory", "E0308", "😀", " ", "", "zzz"] {
+    for absent in ["memory", "in", "Memory", "E0308", "😀", " ", "", "zzz"] {
         assert!(segment.postings(absent).is_empty(), "{absent:?}");
     }
     assert_eq!(segment.doc_freq("rust"), 2);
     assert_eq!(segment.term_map().get("rust"), 2);
-    assert_eq!(built.num_tokens, 4 + 4 + 2 + 3);
-    assert_eq!(&segment.norms[8..], &[4, 4, 2, 0, 0, 3]);
+    assert_eq!(built.num_tokens, 3 + 4 + 2 + 3);
+    assert_eq!(&segment.norms[8..], &[3, 4, 2, 0, 0, 3]);
 }
 
 #[test]

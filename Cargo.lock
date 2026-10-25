@@ -759,6 +759,7 @@ name = "gyrfalcon"
 version = "0.1.0"
 dependencies = [
  "bitpacking",
+ "frostem",
  "lz4_flex",
  "memmap2",
  "ort",

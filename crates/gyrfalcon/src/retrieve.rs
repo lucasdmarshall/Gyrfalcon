@@ -231,8 +231,12 @@ impl Index {
         snapshot.segments.iter().flat_map(|segment| segment.vector.mapped_paths()).collect()
     }
 
-    /// Collection `doc_freq` of `term` from the published BM25 map, dead chunks included.
-    pub fn collection_doc_freq(&self, term: &str) -> u64 {
-        self.shared.snapshot().doc_freq(term)
+    /// Collection `doc_freq` of `word` as the analyzer indexes it (so `safety` counts the
+    /// stem `safeti`), dead chunks included. A stopword has none.
+    pub fn collection_doc_freq(&self, word: &str) -> u64 {
+        match prepare(word).tokens.first() {
+            Some(token) => self.shared.snapshot().doc_freq(&token.text),
+            None => 0,
+        }
     }
 }
