@@ -80,14 +80,14 @@ fn create_writes_epoch_1_and_empty_generation_0_files() {
     Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     let manifest = Manifest::read(&dir.path().join("manifest.json")).unwrap();
     assert_eq!(manifest.epoch, 1);
-    assert_eq!(manifest.format_version, 3);
-    assert_eq!((manifest.tombstone_generation, manifest.catalog_generation, manifest.bm25_generation), (0, 0, 0));
+    assert_eq!(manifest.format_version, 4);
+    assert_eq!((manifest.tombstone_generation, manifest.catalog_generation), (0, 0));
     assert_eq!((manifest.bm25_num_docs, manifest.bm25_num_tokens), (0, 0));
     assert_eq!(manifest.segments_per_tier, 8);
     assert_eq!(manifest.max_merge_chunks, 100_000);
     assert_eq!(manifest.dead_ratio_limit, 0.20);
     assert!(manifest.sealed_segments.is_empty());
-    for file in ["tombstones/0.bin", "catalog/0.bin", "bm25/0.bin"] {
+    for file in ["tombstones/0.bin", "catalog/0.bin"] {
         assert!(dir.path().join(file).is_file(), "{file}");
     }
     assert_eq!(std::fs::read(dir.path().join("tombstones/0.bin")).unwrap().len(), 0);
@@ -160,10 +160,9 @@ fn index_documents_publishes_chunk_ids_and_epoch_2() {
     assert_eq!(manifest.sealed_segments.len(), 1);
     assert_eq!(manifest.bm25_num_docs, 1);
     assert_eq!(manifest.bm25_num_tokens, 2);
-    assert_eq!(manifest.bm25_generation, 1);
     assert_eq!(manifest.catalog_generation, 1);
     assert_eq!(manifest.tombstone_generation, 0);
-    assert!(dir.path().join(format!("segments/{}/terms.bin", manifest.sealed_segments[0])).exists());
+    assert!(dir.path().join(format!("segments/{}/lexical/terms.dict", manifest.sealed_segments[0])).exists());
     assert!(dir.path().join(format!("segments/{}/vectors.bin", manifest.sealed_segments[0])).exists());
     let segment_json: serde_json::Value = serde_json::from_slice(
         &std::fs::read(dir.path().join(format!("segments/{}/segment.json", manifest.sealed_segments[0]))).unwrap(),

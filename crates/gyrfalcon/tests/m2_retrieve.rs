@@ -18,7 +18,6 @@ fn collection_doc_freq_is_the_sum_and_ignores_nothing_dead() {
     index.testing_tombstone_chunk(0);
     let manifest = index.manifest();
     assert_eq!(manifest.bm25_num_docs, 2);
-    assert_eq!(manifest.bm25_generation, 2);
     let hits = index.lexical_search(&gyrfalcon::prepare("rust").tokens, 10).unwrap();
     // The dead chunk never takes a slot; its document frequency stays in the collection sum.
     assert!(!hits.iter().any(|hit| hit.chunk_id == 0));

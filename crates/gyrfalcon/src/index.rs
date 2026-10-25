@@ -13,7 +13,7 @@ use crate::manifest::{check_compatible, IndexConfig, Manifest};
 use crate::prepare::{prepare, prepare_with_prefix};
 use crate::rerank::{NoopReranker, Reranker};
 use crate::segment::{self, ChunkRecord, Segment};
-use crate::store::{self, Catalog, CatalogRow, TermMap, Tombstones};
+use crate::store::{self, Catalog, CatalogRow, Tombstones};
 use crate::vector::quantize;
 
 /// Texts per `embed` call during ingest.
@@ -55,7 +55,6 @@ pub(crate) struct Snapshot {
     pub manifest: Manifest,
     pub catalog: Arc<Catalog>,
     pub tombstones: Arc<Tombstones>,
-    pub bm25: Arc<TermMap>,
     pub segments: Vec<Arc<Segment>>,
     /// Live (not tombstoned) chunk count per entry of `segments`.
     pub live: Vec<u64>,
@@ -66,21 +65,30 @@ impl Snapshot {
         manifest: Manifest,
         catalog: Arc<Catalog>,
         tombstones: Arc<Tombstones>,
-        bm25: Arc<TermMap>,
         segments: Vec<Arc<Segment>>,
     ) -> Snapshot {
+        // Dead ids are few and sorted, so each segment counts its own with a range lookup.
         let live = segments
             .iter()
             .map(|segment| {
-                let dead = if tombstones.is_empty() {
-                    0
-                } else {
-                    segment.ids.iter().filter(|id| tombstones.contains(**id)).count() as u64
+                let dead = match (segment.ids.first(), segment.ids.last()) {
+                    (Some(first), Some(last)) => tombstones
+                        .in_range(*first, *last)
+                        .iter()
+                        .filter(|id| segment.ids.binary_search(id).is_ok())
+                        .count() as u64,
+                    _ => 0,
                 };
                 segment.meta.chunk_count - dead
             })
             .collect();
-        Snapshot { manifest, catalog, tombstones, bm25, segments, live }
+        Snapshot { manifest, catalog, tombstones, segments, live }
+    }
+
+    /// Chunks holding `term` across the collection, dead ones included: the sum of every
+    /// segment's dictionary.
+    pub fn doc_freq(&self, term: &str) -> u64 {
+        self.segments.iter().map(|segment| u64::from(segment.lexical.doc_freq(term))).sum()
     }
 
     pub fn segment_of(&self, chunk_id: u64) -> Option<&Arc<Segment>> {
@@ -99,8 +107,6 @@ pub(crate) struct Change {
     pub remove: Vec<u64>,
     pub catalog: Option<Catalog>,
     pub tombstones: Option<Tombstones>,
-    /// Collection term map with its `num_docs` and `num_tokens` totals.
-    pub bm25: Option<(TermMap, u64, u64)>,
 }
 
 pub(crate) struct Shared {
@@ -178,19 +184,7 @@ impl Shared {
             }
             None => current.tombstones.clone(),
         };
-        let bm25 = match change.bm25 {
-            Some((map, num_docs, num_tokens)) => {
-                retired_files.push(root.join(format!("bm25/{}.bin", manifest.bm25_generation)));
-                manifest.bm25_generation += 1;
-                let path = root.join(format!("bm25/{}.bin", manifest.bm25_generation));
-                store::write_synced(&path, &map.encode())?;
-                manifest.bm25_num_docs = num_docs;
-                manifest.bm25_num_tokens = num_tokens;
-                Arc::new(map)
-            }
-            None => current.bm25.clone(),
-        };
-        for dir in ["catalog", "tombstones", "bm25"] {
+        for dir in ["catalog", "tombstones"] {
             store::sync_dir(&root.join(dir))?;
         }
 
@@ -198,6 +192,9 @@ impl Shared {
             current.segments.iter().filter(|s| !change.remove.contains(&s.id)).cloned().collect();
         segments.extend(change.add.iter().cloned());
         manifest.sealed_segments = segments.iter().map(|s| s.name()).collect();
+        // BM25 totals are the segments' sums, dead chunks included until a merge drops them.
+        manifest.bm25_num_docs = segments.iter().map(|s| s.meta.num_docs).sum();
+        manifest.bm25_num_tokens = segments.iter().map(|s| s.meta.num_tokens).sum();
         manifest.epoch += 1;
         manifest.next_chunk_id = self.next_chunk_id.load(Ordering::SeqCst);
         manifest.next_segment_id = self.next_segment_id.load(Ordering::SeqCst);
@@ -209,7 +206,7 @@ impl Shared {
         for file in retired_files {
             let _ = std::fs::remove_file(file);
         }
-        Ok(Snapshot::new(manifest, catalog, tombstones, bm25, segments))
+        Ok(Snapshot::new(manifest, catalog, tombstones, segments))
     }
 }
 
@@ -331,12 +328,11 @@ impl Index {
         }
         std::fs::create_dir_all(path)?;
         let lock = WriterLock::acquire(path)?;
-        for dir in ["tombstones", "catalog", "bm25", "segments"] {
+        for dir in ["tombstones", "catalog", "segments"] {
             std::fs::create_dir_all(path.join(dir))?;
         }
         store::write_synced(&path.join("tombstones/0.bin"), &Tombstones::default().encode())?;
         store::write_synced(&path.join("catalog/0.bin"), &Catalog::default().encode())?;
-        store::write_synced(&path.join("bm25/0.bin"), &TermMap::default().encode())?;
         let manifest = Manifest::new(config);
         manifest.publish(path)?;
         Index::from_manifest(path, manifest, lock)
@@ -398,7 +394,6 @@ impl Index {
         let tombstones = Tombstones::decode(&std::fs::read(
             path.join(format!("tombstones/{}.bin", manifest.tombstone_generation)),
         )?)?;
-        let bm25 = TermMap::read(&path.join(format!("bm25/{}.bin", manifest.bm25_generation)))?;
         let mut segments = Vec::new();
         for name in &manifest.sealed_segments {
             let id = store::parse_segment_name(name)
@@ -413,13 +408,7 @@ impl Index {
             next_segment_id: AtomicU64::new(manifest.next_segment_id),
             reaper: Mutex::new(Reaper::default()),
             merge: crate::merge::MergeControl::default(),
-            state: Mutex::new(Arc::new(Snapshot::new(
-                manifest,
-                Arc::new(catalog),
-                Arc::new(tombstones),
-                Arc::new(bm25),
-                segments,
-            ))),
+            state: Mutex::new(Arc::new(Snapshot::new(manifest, Arc::new(catalog), Arc::new(tombstones), segments))),
         });
         let embedder: Arc<dyn Embedder> = Arc::new(HashEmbedder::new(shared.config.dimension));
         Ok(Index {
@@ -688,14 +677,9 @@ impl Index {
                 byte_start: record.byte_start,
                 byte_end: record.byte_end,
             }));
-            let mut bm25 = (*state.bm25).clone();
-            bm25.add(&sealed.terms);
-            let num_docs = state.manifest.bm25_num_docs + sealed.meta.num_docs;
-            let num_tokens = state.manifest.bm25_num_tokens + sealed.meta.num_tokens;
             let change = Change {
                 add: vec![sealed],
                 catalog: Some(Catalog::from_rows(rows)),
-                bm25: Some((bm25, num_docs, num_tokens)),
                 tombstones: (last && !previous.is_empty()).then(|| state.tombstones.with(previous)),
                 ..Change::default()
             };

@@ -5,7 +5,6 @@
 //!   segment.json   identity fields and counts
 //!   ids.bin        stored chunk ids, ascending (dead ones included)
 //!   vectors.bin    quantized rows in the same order
-//!   terms.bin      (term, doc_freq) of this segment
 //!   lexical/       BM25 index and stored chunk fields, doc ordinals in ids.bin order
 //!   codes.bin      rotated sign bits per row for the dense cascade
 //! ```
@@ -20,7 +19,7 @@ use crate::error::{Error, Result};
 use crate::lexical::{self, CollectionStats, LexicalSegment, ScoredId, StoredChunk};
 use crate::manifest::{IndexConfig, Manifest};
 use crate::prepare::{PreparedText, Token};
-use crate::store::{self, TermMap, Tombstones};
+use crate::store::{self, Tombstones};
 use crate::vector::{self, VectorSegment};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,7 +56,6 @@ pub struct Segment {
     pub meta: SegmentMeta,
     /// Stored chunk ids, ascending.
     pub ids: Vec<u64>,
-    pub terms: TermMap,
     pub lexical: LexicalSegment,
     pub vector: VectorSegment,
 }
@@ -118,7 +116,6 @@ impl Segment {
                 meta.chunk_count
             )));
         }
-        let terms = TermMap::read(&dir.join("terms.bin"))?;
         let lexical = LexicalSegment::open(&dir.join("lexical"))?;
         if lexical.num_docs() as usize != ids.len() {
             return Err(Error::SegmentCorrupt(format!(
@@ -129,7 +126,7 @@ impl Segment {
             )));
         }
         let vector = VectorSegment::open(&dir, meta.quantization, meta.dimension as usize)?;
-        Ok(Segment { id, dir, meta, ids, terms, lexical, vector })
+        Ok(Segment { id, dir, meta, ids, lexical, vector })
     }
 }
 
@@ -174,7 +171,6 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
         store::write_synced(&dir.join("vectors.bin"), &vectors)?;
 
         let built = lexical.join().map_err(|_| Error::Lexical("lexical build panicked".into()))??;
-        store::write_synced(&dir.join("terms.bin"), &built.terms.encode())?;
         codes.join().map_err(|_| Error::Vector("codes build panicked".into()))??;
         Ok(built)
     })?;

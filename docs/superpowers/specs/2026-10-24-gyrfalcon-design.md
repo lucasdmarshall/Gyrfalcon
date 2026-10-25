@@ -676,3 +676,20 @@ segments, with the same codes, are the path past that; they are not built yet.
 
 `format_version` is 3. The RAM report key `usearch_bytes` is now `codes_bytes`, and
 `vectors.bin` is mapped for search (stage 3 and rescore fusion read it).
+
+### BM25 statistics from segment dictionaries (format version 4)
+
+The collection term map (`bm25/{generation}.bin`) and each segment's `terms.bin` duplicated what
+every segment's `lexical/terms.dict` already holds. A seal cloned the whole map, added the new
+segment's terms, and rewrote and fsynced it, so every write cost O(collection terms); every
+segment also kept its own map in RAM.
+
+Now a query's collection doc freq is the sum of the segments' dictionary entries for that term,
+one binary search per segment, which the lexical leg already does. `bm25_num_docs` and
+`bm25_num_tokens` stay in the manifest, recomputed at publish as the segments' sums (dead chunks
+included until a merge drops them), so scores are unchanged. `bm25_generation`, the `bm25/`
+directory, and `terms.bin` are gone; the RAM report drops `bm25_bytes`. Live counts per segment
+are now counted from the tombstones in that segment's id range instead of a pass over its ids.
+
+FiQA added in calls of 100 documents (`examples/profile_incremental`): 22.8 s to 11.9 s; in calls
+of 1,000: 5.2 s to 3.9 s.

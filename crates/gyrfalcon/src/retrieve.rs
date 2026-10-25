@@ -8,6 +8,7 @@ use crate::index::{Index, Snapshot};
 use crate::lexical::{CollectionStats, ScoredId};
 use crate::prepare::{prepare, Token};
 use crate::rerank::{NoopReranker, Reranker, RERANK_K};
+use crate::store::TermMap;
 use crate::vector::{Budget, DenseQuery, FallbackStep};
 
 /// Per-leg list length before fusion.
@@ -60,10 +61,12 @@ pub struct DenseHits {
 }
 
 pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -> Result<Vec<ScoredId>> {
+    // Collection doc freqs of the query terms only, summed over the segment dictionaries.
+    let terms = TermMap(tokens.iter().map(|t| (t.text.clone(), snapshot.doc_freq(&t.text))).collect());
     let stats = CollectionStats {
         num_docs: snapshot.manifest.bm25_num_docs,
         num_tokens: snapshot.manifest.bm25_num_tokens,
-        terms: &snapshot.bm25,
+        terms: &terms,
     };
     let mut merged = Vec::new();
     for segment in &snapshot.segments {
@@ -230,6 +233,6 @@ impl Index {
 
     /// Collection `doc_freq` of `term` from the published BM25 map, dead chunks included.
     pub fn collection_doc_freq(&self, term: &str) -> u64 {
-        self.shared.snapshot().bm25.get(term)
+        self.shared.snapshot().doc_freq(term)
     }
 }

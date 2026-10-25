@@ -186,16 +186,17 @@ fn scores_match_tantivy_on_random_collections() {
         let dir = tempfile::tempdir().unwrap();
         let built = write(&dir.path().join("lexical"), &chunks).unwrap();
         let ours = LexicalSegment::open(&dir.path().join("lexical")).unwrap();
+        let segment_terms = ours.term_map();
         let theirs = Tantivy::build(&dir.path().join("tantivy"), &chunks);
         let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
 
         // Collection statistics both as this segment alone and as part of a larger collection.
-        let mut wider = built.terms.clone();
+        let mut wider = segment_terms.clone();
         for value in wider.0.values_mut() {
             *value = *value * 3 + 1;
         }
         let collections =
-            [(num_docs, built.num_tokens, &built.terms), (num_docs * 3 + 5, built.num_tokens * 2 + 17, &wider)];
+            [(num_docs, built.num_tokens, &segment_terms), (num_docs * 3 + 5, built.num_tokens * 2 + 17, &wider)];
         for (collection, (num_docs, num_tokens, terms)) in collections.into_iter().enumerate() {
             let stats = CollectionStats { num_docs, num_tokens: num_tokens.max(1), terms };
             for query in 0..40 {
@@ -231,7 +232,8 @@ fn postings_follow_the_prepared_tokens() {
     for absent in ["Memory", "E0308", "😀", " ", "", "zzz"] {
         assert!(segment.postings(absent).is_empty(), "{absent:?}");
     }
-    assert_eq!(built.terms.get("rust"), 2);
+    assert_eq!(segment.doc_freq("rust"), 2);
+    assert_eq!(segment.term_map().get("rust"), 2);
     assert_eq!(built.num_tokens, 4 + 4 + 2 + 3);
     assert_eq!(&segment.norms[8..], &[4, 4, 2, 0, 0, 3]);
 }
@@ -275,9 +277,9 @@ fn stored_chunks_roundtrip_across_blocks() {
 #[test]
 fn an_empty_segment_opens_and_finds_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let built = write(dir.path(), &[]).unwrap();
-    assert!(built.terms.0.is_empty());
+    write(dir.path(), &[]).unwrap();
     let segment = LexicalSegment::open(dir.path()).unwrap();
+    assert!(segment.term_map().0.is_empty());
     let terms = TermMap::default();
     let stats = CollectionStats { num_docs: 5, num_tokens: 9, terms: &terms };
     let hits = segment.search(&prepare("anything").tokens, 10, &stats, &Tombstones::from_ids(vec![]), &[]).unwrap();
@@ -293,7 +295,8 @@ fn damaged_files_are_errors_not_panics() {
     let dir = tempfile::tempdir().unwrap();
     let built = write(dir.path(), &chunks).unwrap();
     let ids: Vec<u64> = (0..400).collect();
-    let stats = CollectionStats { num_docs: 400, num_tokens: built.num_tokens, terms: &built.terms };
+    let terms = LexicalSegment::open(dir.path()).unwrap().term_map();
+    let stats = CollectionStats { num_docs: 400, num_tokens: built.num_tokens, terms: &terms };
     let dead = Tombstones::from_ids(vec![]);
     let query = prepare("alpha gamma3 x delta").tokens;
     for file in ["terms.dict", "postings.bin", "norms.bin", "docs.bin"] {

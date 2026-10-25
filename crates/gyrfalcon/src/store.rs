@@ -83,57 +83,13 @@ fn put_string(out: &mut Vec<u8>, value: &str) {
     out.extend_from_slice(value.as_bytes());
 }
 
-/// A sorted `(term, doc_freq)` table. Used for a segment's `terms.bin` and for the
-/// collection map `bm25/{generation}.bin`.
+/// `(term, doc_freq)` pairs: the collection statistics of a query's terms.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TermMap(pub BTreeMap<String, u64>);
 
 impl TermMap {
     pub fn get(&self, term: &str) -> u64 {
         self.0.get(term).copied().unwrap_or(0)
-    }
-
-    pub fn add(&mut self, other: &TermMap) {
-        for (term, df) in &other.0 {
-            *self.0.entry(term.clone()).or_insert(0) += df;
-        }
-    }
-
-    pub fn subtract(&mut self, other: &TermMap) {
-        for (term, df) in &other.0 {
-            if let Some(value) = self.0.get_mut(term) {
-                *value = value.saturating_sub(*df);
-                if *value == 0 {
-                    self.0.remove(term);
-                }
-            }
-        }
-    }
-
-    pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&(self.0.len() as u64).to_le_bytes());
-        for (term, df) in &self.0 {
-            put_string(&mut out, term);
-            out.extend_from_slice(&df.to_le_bytes());
-        }
-        out
-    }
-
-    pub fn decode(bytes: &[u8]) -> Result<TermMap> {
-        let mut reader = Reader::new(bytes, "term map");
-        let count = reader.u64()?;
-        let mut map = BTreeMap::new();
-        for _ in 0..count {
-            let term = reader.string()?;
-            let df = reader.u64()?;
-            map.insert(term, df);
-        }
-        Ok(TermMap(map))
-    }
-
-    pub fn read(path: &Path) -> Result<TermMap> {
-        TermMap::decode(&std::fs::read(path)?)
     }
 }
 

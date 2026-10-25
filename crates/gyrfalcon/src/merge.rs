@@ -230,17 +230,6 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
             Some(CatalogRow { segment_id: new_id, ..row.clone() })
         })
         .collect();
-    let mut bm25 = (*state.bm25).clone();
-    let mut num_docs = state.manifest.bm25_num_docs;
-    let mut num_tokens = state.manifest.bm25_num_tokens;
-    for input in &inputs {
-        bm25.subtract(&input.terms);
-        num_docs -= input.meta.num_docs;
-        num_tokens -= input.meta.num_tokens;
-    }
-    bm25.add(&merged.terms);
-    num_docs += merged.meta.num_docs;
-    num_tokens += merged.meta.num_tokens;
     let tombstones = match kind {
         Kind::Tier => None,
         Kind::DeadRatio | Kind::All => {
@@ -259,7 +248,6 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
         remove: inputs.iter().map(|s| s.id).collect(),
         catalog: Some(Catalog::from_rows(rows)),
         tombstones,
-        bm25: Some((bm25, num_docs, num_tokens)),
     };
     let next = match shared.publish(&state, change, false) {
         Ok(next) => next,

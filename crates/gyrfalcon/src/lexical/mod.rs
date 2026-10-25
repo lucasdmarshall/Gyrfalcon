@@ -202,6 +202,21 @@ impl LexicalSegment {
         self.num_docs
     }
 
+    /// Docs of this segment holding `text`, dead ones included.
+    pub fn doc_freq(&self, text: &str) -> u32 {
+        self.find(text).map_or(0, |term| self.entry(term).doc_freq)
+    }
+
+    /// Every term with its doc freq, for tests that need whole-segment statistics.
+    #[cfg(test)]
+    fn term_map(&self) -> TermMap {
+        TermMap(
+            (0..self.num_terms)
+                .map(|t| (String::from_utf8(self.term(t).to_vec()).unwrap(), u64::from(self.entry(t).doc_freq)))
+                .collect(),
+        )
+    }
+
     fn term_end(&self, term: usize) -> usize {
         let at = DICT_HEADER + 4 * term;
         u32::from_le_bytes(self.dict[at..at + 4].try_into().unwrap()) as usize

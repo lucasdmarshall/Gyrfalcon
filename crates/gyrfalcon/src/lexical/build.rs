@@ -11,12 +11,9 @@ use rustc_hash::FxHashMap;
 use super::{docstore, fieldnorm_to_id, postings, DICT_ENTRY, DICT_HEADER, DICT_MAGIC, NORMS_MAGIC, POSTINGS_MAGIC};
 use crate::error::{Error, Result};
 use crate::segment::ChunkRecord;
-use crate::store::TermMap;
 
 /// What a segment's BM25 totals need from the build.
 pub struct Built {
-    /// `(term, doc_freq)` of this segment.
-    pub terms: TermMap,
     /// Token occurrences, repeats included.
     pub num_tokens: u64,
 }
@@ -130,7 +127,6 @@ fn write_index(dir: &Path, chunks: &[ChunkRecord]) -> Result<Built> {
         end += inverted.names[term as usize].len() as u32;
         dict.extend_from_slice(&end.to_le_bytes());
     }
-    let mut terms = Vec::with_capacity(order.len());
     for &term in &order {
         let range = inverted.starts[term as usize]..inverted.starts[term as usize + 1];
         let (docs, tfs) = (&inverted.docs[range.clone()], &inverted.tfs[range]);
@@ -140,7 +136,6 @@ fn write_index(dir: &Path, chunks: &[ChunkRecord]) -> Result<Built> {
         dict.extend_from_slice(&max_tf.to_le_bytes());
         dict.push(min_norm);
         postings::encode(docs, tfs, &norm, &mut postings);
-        terms.push((inverted.names[term as usize].to_string(), docs.len() as u64));
     }
     for &term in &order {
         dict.extend_from_slice(inverted.names[term as usize].as_bytes());
@@ -152,5 +147,5 @@ fn write_index(dir: &Path, chunks: &[ChunkRecord]) -> Result<Built> {
     std::fs::write(dir.join("terms.dict"), dict)?;
     std::fs::write(dir.join("postings.bin"), postings)?;
     std::fs::write(dir.join("norms.bin"), norms_file)?;
-    Ok(Built { terms: TermMap(terms.into_iter().collect()), num_tokens: inverted.num_tokens })
+    Ok(Built { num_tokens: inverted.num_tokens })
 }

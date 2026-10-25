@@ -145,7 +145,7 @@ impl Index {
         let idf_max = prepared
             .tokens
             .iter()
-            .map(|t| bm25_idf(snapshot.manifest.bm25_num_docs, snapshot.bm25.get(&t.text)))
+            .map(|t| bm25_idf(snapshot.manifest.bm25_num_docs, snapshot.doc_freq(&t.text)))
             .fold(0.0, f32::max);
         let mut trace = QueryTrace {
             features: QueryFeatures {

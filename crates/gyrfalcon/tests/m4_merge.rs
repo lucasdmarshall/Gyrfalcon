@@ -44,12 +44,10 @@ fn one_segment_with_stored_count(n: usize) -> Index {
 fn delete_hides_the_chunk_and_keeps_doc_freq() {
     let mut index = two_rust_docs();
     let before = index.collection_doc_freq("rust");
-    let bm25_generation = index.manifest().bm25_generation;
     let report = index.delete_document("a").unwrap();
     assert_eq!(report.deleted_chunks, 1);
     assert_eq!(index.collection_doc_freq("rust"), before);
     assert_eq!(index.collection_doc_freq("safety"), 1);
-    assert_eq!(index.manifest().bm25_generation, bm25_generation);
     assert_eq!(index.manifest().bm25_num_docs, 2);
     let hits = index.retrieve("rust", RetrieveOptions { rerank: false, limit: 5 }).unwrap();
     assert!(!hits.chunk_ids.contains(&0));
@@ -99,6 +97,9 @@ fn merge_of_the_dead_chunk_segment_drops_doc_freq_by_one() {
     for i in 0..7 {
         index.index_documents(&[Document::body(format!("d{i}"), "common words")]).unwrap();
     }
+    // Drain the merge request the last call queued, so no pass sees the eighth segment before
+    // the delete below.
+    index.wait_until_merge_idle();
     index.auto_merge = false;
     index.index_documents(&[Document::body("rare", "common unicorn")]).unwrap();
     index.delete_document("rare").unwrap();
