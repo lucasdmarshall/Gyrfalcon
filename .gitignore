@@ -4,3 +4,4 @@
 /.models
 /.data
 /bench/traces
+__pycache__/
