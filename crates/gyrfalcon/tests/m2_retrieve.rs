@@ -62,7 +62,7 @@ fn ninety_dead_of_100(config: &IndexConfig) -> (tempfile::TempDir, Index) {
 }
 
 #[test]
-fn filtered_search_returns_ten_live_ids_when_ninety_are_dead() {
+fn dense_search_returns_ten_live_ids_when_ninety_are_dead() {
     let (_dir, index) = ninety_dead_of_100(&IndexConfig::test_default());
     assert_eq!(index.manifest().sealed_segments.len(), 1);
     let query = unit(384, 0, 1.0);
@@ -82,18 +82,6 @@ fn dense_list_is_short_only_when_live_chunks_run_out() {
     let hits = index.vector_search(&unit(384, 0, -1.0), 50).unwrap();
     assert_eq!(hits.ids.len(), 10);
     assert!(hits.ids.iter().all(|id| *id >= 90));
-}
-
-#[test]
-fn exact_scan_is_recorded_when_expansion_cannot_fill() {
-    let (_dir, mut index) = ninety_dead_of_100(&IndexConfig::test_default());
-    index.testing_starve_hnsw = true;
-    let hits = index.vector_search(&unit(384, 0, 1.0), 10).unwrap();
-    assert_eq!(hits.deepest, FallbackStep::Exact);
-    assert_eq!(hits.ids.len(), 10);
-    assert!(hits.ids.iter().all(|id| *id >= 90));
-    let retrieved = index.retrieve("term", RetrieveOptions { rerank: false, limit: 5 }).unwrap();
-    assert_eq!(retrieved.fallback, FallbackStep::Exact);
 }
 
 #[test]
@@ -122,14 +110,16 @@ fn binary_mode_rescore_orders_by_cosine() {
 }
 
 #[test]
-fn int8_search_does_not_map_vectors_bin() {
+fn int8_search_maps_codes_and_vectors() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     let vector = unit(384, 0, 1.0);
     index.index_documents_with_vectors(&[(Document::body("a", "rust"), vector.clone())]).unwrap();
     let hits = index.vector_search(&vector, 1).unwrap();
     assert_eq!(hits.ids, vec![0]);
-    assert!(index.vector_search_mapped_paths().iter().all(|path| !path.ends_with("vectors.bin")));
+    let mapped = index.vector_search_mapped_paths();
+    assert!(mapped.iter().any(|path| path.ends_with("codes.bin")));
+    assert!(mapped.iter().any(|path| path.ends_with("vectors.bin")));
 }
 
 #[test]
@@ -224,14 +214,12 @@ fn rescore_gives_lexical_only_hits_their_exact_similarity() {
     let hits = index.retrieve("term", RetrieveOptions { rerank: false, limit: 10 }).unwrap();
     assert_eq!(hits.chunk_ids.len(), 10);
     assert!(hits.chunk_ids.iter().all(|id| *id >= 90));
-    // Rescoring reads stored vectors through USearch; int8 still leaves vectors.bin unmapped.
-    assert!(index.vector_search_mapped_paths().iter().all(|path| !path.ends_with("vectors.bin")));
     index.fusion = gyrfalcon::Fusion::Score { dense_weight: 0.3 };
     assert_eq!(index.retrieve("term", RetrieveOptions { rerank: false, limit: 10 }).unwrap().chunk_ids.len(), 10);
 }
 
 #[test]
-fn many_concurrent_searches_wait_for_a_slot_instead_of_failing() {
+fn many_concurrent_searches_all_succeed() {
     let (_dir, index) = ninety_dead_of_100(&IndexConfig::test_default());
     std::thread::scope(|scope| {
         for _ in 0..96 {

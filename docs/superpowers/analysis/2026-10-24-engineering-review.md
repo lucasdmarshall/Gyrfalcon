@@ -151,12 +151,13 @@ Ingest, item 1 (lite tier, best of 3, 4-core VM):
 | Start | 24.6 s | 19.5 s |
 | Regex-free `prepare`, WordPiece fast path, parallel records and embedding | 8.9 s | 7.7 s |
 | Owned BM25 index instead of Tantivy (spec, "Owned BM25 index replaces Tantivy") | 3.3 s | 5.9 s |
+| Graph-free dense codes instead of USearch HNSW (spec, "Graph-free dense index") | 3.0 s | 2.4 s |
 
 The lexical build is now about 10x cheaper than Tantivy plus the term count, and the BM25 leg
-is 2-3x faster before any pruning, with identical rankings. The largest seal cost is now the
-USearch build: about 0.5-0.75 s per 10,000 chunks, and 1.3 s for a FiQA tail segment of 7,638
-chunks, which builds on one thread because graphs under 10,000 rows build single-threaded for
-determinism. That rule and the HNSW build parameters are the next ingest item.
+is 2-3x faster before any pruning, with identical rankings. The dense side no longer builds a
+graph: RaBitQ-style codes take one pass, and the cascade finds 0.996-1.000 of the exact top 50
+where HNSW found 0.94-0.985. On long chunks (ORB) ingest is now bound by record building, static
+embedding, and the lexical build.
 
 Lexical query, item 2: the owned index scores exhaustively today. Its skip entries already
 carry the per-block max tf and min norm that block-max pruning needs, so WAND or MaxScore is a

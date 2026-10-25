@@ -76,7 +76,8 @@ impl BenchEnvironment {
     }
 }
 
-/// Percent of timed queries per deepest HNSW step. All six keys are present and sum to 100.
+/// Percent of timed queries per deepest dense fallback step. All six keys are present and sum
+/// to 100; the graph-free cascade always reports `64`.
 pub fn fallback_pct(steps: &[FallbackStep]) -> BTreeMap<String, f64> {
     let mut out: BTreeMap<String, f64> = FallbackStep::ALL.iter().map(|step| (step.label().to_string(), 0.0)).collect();
     if steps.is_empty() {
@@ -187,7 +188,7 @@ pub struct IngestReport {
 }
 
 pub const RAM_KEYS: [&str; 10] = [
-    "usearch_bytes",
+    "codes_bytes",
     "vectors_bin_bytes",
     "lexical_bytes",
     "catalog_bytes",
@@ -217,15 +218,15 @@ pub fn collection_bytes(root: &std::path::Path) -> Map<String, Value> {
     }
     let mut out = bench_ram_shape();
     let segments = root.join("segments");
-    let (mut usearch, mut vectors, mut lexical) = (0, 0, 0);
+    let (mut codes, mut vectors, mut lexical) = (0, 0, 0);
     if let Ok(entries) = std::fs::read_dir(&segments) {
         for entry in entries.flatten() {
-            usearch += size(&entry.path().join("usearch.index"));
+            codes += size(&entry.path().join("codes.bin"));
             vectors += size(&entry.path().join("vectors.bin"));
             lexical += size(&entry.path().join("lexical"));
         }
     }
-    out.insert("usearch_bytes".into(), json!(usearch));
+    out.insert("codes_bytes".into(), json!(codes));
     out.insert("vectors_bin_bytes".into(), json!(vectors));
     out.insert("lexical_bytes".into(), json!(lexical));
     out.insert("catalog_bytes".into(), json!(size(&root.join("catalog"))));

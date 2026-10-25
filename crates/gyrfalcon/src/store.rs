@@ -230,6 +230,13 @@ impl Tombstones {
         self.ids.len()
     }
 
+    /// The dead ids in `low..=high`, ascending.
+    pub fn in_range(&self, low: u64, high: u64) -> &[u64] {
+        let start = self.ids.partition_point(|id| *id < low);
+        let end = self.ids.partition_point(|id| *id <= high);
+        &self.ids[start..end.max(start)]
+    }
+
     pub fn is_empty(&self) -> bool {
         self.ids.is_empty()
     }

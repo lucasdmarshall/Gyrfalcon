@@ -314,8 +314,6 @@ pub struct Index {
     pub pause_merge_after_copy: bool,
     /// Test hook: the next `reap_now` fails this many deletes with a sharing violation.
     pub deleter_fail_times: u32,
-    /// Test hook: HNSW returns nothing so the dense leg falls back to the exact scan.
-    pub testing_starve_hnsw: bool,
     /// RRF weights `[lexical, dense]`. The spec default is `[1, 1]`.
     pub rrf_weights: [f32; 2],
     /// How retrieve combines the legs. Rescore with dense weight 0.2 unless set.
@@ -431,7 +429,6 @@ impl Index {
             chat: None,
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
-            testing_starve_hnsw: false,
             rrf_weights: [crate::fuse::LEXICAL_WEIGHT, crate::fuse::DENSE_WEIGHT],
             fusion: crate::fuse::Fusion::Rescore { dense_weight: crate::fuse::RESCORE_DENSE_WEIGHT },
             auto_merge: true,

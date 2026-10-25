@@ -91,7 +91,7 @@ fn bench_ingest_waits_for_the_merger() {
 fn ram_report_lists_the_byte_counts() {
     let report = gyrfalcon::bench::bench_ram_shape();
     for key in [
-        "usearch_bytes",
+        "codes_bytes",
         "vectors_bin_bytes",
         "lexical_bytes",
         "catalog_bytes",
@@ -110,7 +110,7 @@ fn bench_ram_fills_the_byte_counts() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["vectors_bin_bytes"], 2000 * 384);
-    assert!(report["usearch_bytes"].as_u64().unwrap() > 0);
+    assert!(report["codes_bytes"].as_u64().unwrap() > 0);
     assert!(report["lexical_bytes"].as_u64().unwrap() > 0);
     assert!(report["rss_model_loaded"].as_u64().unwrap() > 0);
     assert!(report["rss_index_open"].as_u64().unwrap() >= report["rss_baseline"].as_u64().unwrap());

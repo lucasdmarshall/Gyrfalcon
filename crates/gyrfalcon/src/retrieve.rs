@@ -8,7 +8,7 @@ use crate::index::{Index, Snapshot};
 use crate::lexical::{CollectionStats, ScoredId};
 use crate::prepare::{prepare, Token};
 use crate::rerank::{NoopReranker, Reranker, RERANK_K};
-use crate::vector::{DenseQuery, FallbackStep};
+use crate::vector::{Budget, DenseQuery, FallbackStep};
 
 /// Per-leg list length before fusion.
 pub const LEG_LIMIT: usize = 50;
@@ -43,7 +43,7 @@ pub struct Hits {
     pub hits: Vec<Hit>,
     /// `embed` calls this retrieve made. Always 1 for a non-empty query.
     pub embed_calls: usize,
-    /// Deepest HNSW step any segment reached.
+    /// Deepest fallback step any segment reached; always `E64` for the graph-free cascade.
     pub fallback: FallbackStep,
     pub epoch: u64,
     pub warning: Option<String>,
@@ -75,21 +75,33 @@ pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -
 }
 
 pub(crate) fn dense_leg(snapshot: &Snapshot, query: &DenseQuery, limit: usize) -> Result<DenseHits> {
-    let dead = snapshot.tombstones.clone();
-    let live = move |id: u64| !dead.contains(id);
-    let mut merged = Vec::new();
-    let mut deepest = FallbackStep::E64;
-    for (segment, live_count) in snapshot.segments.iter().zip(&snapshot.live) {
-        let found = segment.vector.search(query, limit, &live, &segment.ids, *live_count as usize)?;
-        deepest = deepest.max(found.step);
-        merged.extend(found.hits);
+    // Stages 1 and 2 per segment, then one exact rescore of the best estimates overall, so the
+    // exact work does not grow with the segment count.
+    let live: Vec<usize> = snapshot.live.iter().map(|count| *count as usize).collect();
+    let budgets = Budget::split(limit, &live);
+    let mut pool: Vec<(f32, usize, u32)> = Vec::new();
+    for (index, (segment, budget)) in snapshot.segments.iter().zip(&budgets).enumerate() {
+        let found = segment.vector.candidates(query, *budget, &snapshot.tombstones, &segment.ids, live[index])?;
+        pool.extend(found.into_iter().map(|(row, estimate)| (estimate, index, row)));
+    }
+    let keep = Budget::refine_total(limit, live.iter().sum());
+    if pool.len() > keep {
+        pool.select_nth_unstable_by(keep - 1, |a, b| b.0.total_cmp(&a.0));
+        pool.truncate(keep);
+    }
+    pool.sort_unstable_by_key(|(_, index, row)| (*index, *row));
+    let mut merged = Vec::with_capacity(pool.len());
+    for group in pool.chunk_by(|a, b| a.1 == b.1) {
+        let segment = &snapshot.segments[group[0].1];
+        let mut rows: Vec<u32> = group.iter().map(|(_, _, row)| *row).collect();
+        merged.extend(segment.vector.exact(query, &mut rows, &segment.ids));
     }
     merged.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
     merged.truncate(limit);
     Ok(DenseHits {
         ids: merged.iter().map(|(id, _)| *id).collect(),
         distances: merged.iter().map(|(_, d)| *d).collect(),
-        deepest,
+        deepest: FallbackStep::E64,
         query: Some(query.raw.clone()),
     })
 }
@@ -126,9 +138,7 @@ impl Index {
                 let vector =
                     vectors.into_iter().next().ok_or_else(|| Error::Embed("embedder returned nothing".into()))?;
                 self.check_width(vector.len())?;
-                let mut dense_query = DenseQuery::new(snapshot.manifest.quantization, &vector);
-                dense_query.starve_hnsw = self.testing_starve_hnsw;
-                dense_leg(snapshot, &dense_query, leg_limit)
+                dense_leg(snapshot, &DenseQuery::new(snapshot.manifest.quantization, &vector), leg_limit)
             })();
             (lexical.join().unwrap_or_else(|_| Err(Error::Lexical("lexical leg panicked".into()))), dense)
         });
@@ -208,16 +218,14 @@ impl Index {
     #[doc(hidden)]
     pub fn vector_search(&self, query: &[f32], limit: usize) -> Result<DenseHits> {
         let snapshot = self.shared.snapshot();
-        let mut dense_query = DenseQuery::new(snapshot.manifest.quantization, query);
-        dense_query.starve_hnsw = self.testing_starve_hnsw;
-        dense_leg(&snapshot, &dense_query, limit)
+        dense_leg(&snapshot, &DenseQuery::new(snapshot.manifest.quantization, query), limit)
     }
 
     /// Files the dense leg keeps mapped for search.
     #[doc(hidden)]
     pub fn vector_search_mapped_paths(&self) -> Vec<PathBuf> {
         let snapshot = self.shared.snapshot();
-        snapshot.segments.iter().flat_map(|segment| segment.vector.mapped_paths(&segment.dir)).collect()
+        snapshot.segments.iter().flat_map(|segment| segment.vector.mapped_paths()).collect()
     }
 
     /// Collection `doc_freq` of `term` from the published BM25 map, dead chunks included.

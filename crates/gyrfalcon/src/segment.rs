@@ -7,7 +7,7 @@
 //!   vectors.bin    quantized rows in the same order
 //!   terms.bin      (term, doc_freq) of this segment
 //!   lexical/       BM25 index and stored chunk fields, doc ordinals in ids.bin order
-//!   usearch.index  HNSW graph keyed by chunk id
+//!   codes.bin      rotated sign bits per row for the dense cascade
 //! ```
 //!
 //! After seal none of these files change.
@@ -156,12 +156,13 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
         )));
     }
 
-    // The lexical index, the USearch graph, and the small files build at the same time.
+    // The lexical index and the dense codes build at the same time as the small files.
     let built = std::thread::scope(|scope| -> Result<lexical::Built> {
         let lexical = scope.spawn(|| lexical::write(&dir.join("lexical"), chunks));
-        let usearch = scope.spawn(|| {
-            let rows: Vec<(u64, &[u8])> = chunks.iter().map(|c| (c.chunk_id, c.vector.as_slice())).collect();
-            vector::write_usearch(&dir.join("usearch.index"), config.quantization, config.dimension as usize, &rows)
+        let codes = scope.spawn(|| {
+            let rows: Vec<&[u8]> = chunks.iter().map(|c| c.vector.as_slice()).collect();
+            let codes = vector::encode_codes(config.quantization, config.dimension as usize, &rows);
+            std::fs::write(dir.join("codes.bin"), codes)
         });
 
         let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
@@ -174,7 +175,7 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
 
         let built = lexical.join().map_err(|_| Error::Lexical("lexical build panicked".into()))??;
         store::write_synced(&dir.join("terms.bin"), &built.terms.encode())?;
-        usearch.join().map_err(|_| Error::Vector("usearch build panicked".into()))??;
+        codes.join().map_err(|_| Error::Vector("codes build panicked".into()))??;
         Ok(built)
     })?;
     let meta = SegmentMeta {

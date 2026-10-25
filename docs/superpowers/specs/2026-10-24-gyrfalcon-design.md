@@ -630,3 +630,49 @@ Measured effect (best of 3, 4-core VM):
 `manifest.json` `format_version` is 2. Opening an index with any other version fails with
 `IncompatibleIndex` on `format_version`; a version 1 index must be rebuilt. The bench RAM
 report key `tantivy_bytes` is now `lexical_bytes`.
+
+### Graph-free dense index replaces USearch (format version 3)
+
+With the owned BM25 index in place, the USearch build was the largest seal cost: 0.5-0.75 s
+per 10,000 rows and 4.5 s for FiQA's 57,638 rows on 4 cores, rebuilt from scratch at every
+merge. It also lost recall: against an exact int8 scan, HNSW (M 16, ef 128/64) found 0.94 to
+0.985 of the true top 50.
+
+Each segment now holds `codes.bin` instead of `usearch.index`: RaBitQ codes (Gao and Long,
+SIGMOD 2024) without IVF partitions. A row is dequantized, centered on the segment mean,
+rotated by a seeded randomized Hadamard transform (padded to a power of two), and stored as the
+sign bits of that residual plus four scalars (correction factor, residual norm, `<c, row>`,
+`|row|`). Building is one pass, O(rows), on every core. A query runs a cascade:
+
+1. Hamming distance from the query's residual sign bits to every live row (fixed-width popcount
+   kernels, about 3 ns per 512-bit row); a histogram cut keeps `max(80 * limit, 4000)` rows,
+   split across segments in proportion to their live rows (twice the share, at least 1000).
+2. RaBitQ's asymmetric estimate of the cosine for the survivors, from the query quantized to
+   4-bit planes; estimates are comparable across segments.
+3. One exact int8 cosine rescore of the best `max(16 * limit, 800)` estimates over the whole
+   collection, read from the mapped `vectors.bin` in row order with prefetch.
+
+Kernels are compiled for AVX2 + popcnt, popcnt, and baseline, and chosen once at run time.
+Dead rows are skipped inside the scan, so there is no retry ladder: `fallback` is always `E64`
+and the `testing_starve_hnsw` hook is gone. Thresholds were chosen on recall against an exact
+scan, which uses no relevance labels.
+
+Evidence (`examples/profile_dense`, `bench/results/2026-10-25-cloud-4core-graph-free/`):
+
+- recall@50 against exact: FiQA 0.9958 at limit 50 (HNSW 0.94), SciFact 1.000; with
+  `bge-small-en-v1.5` 0.9997 to 1.000 on SciFact and NFCorpus (HNSW 0.963 to 0.985).
+  Without centering, bge recall fell below HNSW (0.945 to 0.972).
+- BEIR lite dense nDCG@10 rose on SciFact (0.6300 to 0.6323), NFCorpus (0.3018 to 0.3076),
+  and FiQA (0.1831 to 0.1887), and stayed at 0.4516 on ArguAna. Fused `rescore:0.6` was
+  unchanged or higher on all four.
+- Ingest, lite, best of 3: FiQA 5.43 s to 2.38 s, ORB sections 3.25 s to 3.00 s.
+- Dense leg on FiQA at limit 50: 0.56 ms on one segment, 0.75 ms on six (HNSW 0.18-0.20 ms).
+- `gyr` release binary 16.9 MB to 12.4 MB; USearch (C++) and simsimd are dev-dependencies
+  for the comparison only.
+
+Scale: the scan is linear. At about 3 ns per row per core for stage 1, a 1,000,000-row
+collection costs a few milliseconds per query on one core. IVF partitions inside large
+segments, with the same codes, are the path past that; they are not built yet.
+
+`format_version` is 3. The RAM report key `usearch_bytes` is now `codes_bytes`, and
+`vectors.bin` is mapped for search (stage 3 and rescore fusion read it).

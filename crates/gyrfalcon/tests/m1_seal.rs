@@ -80,7 +80,7 @@ fn create_writes_epoch_1_and_empty_generation_0_files() {
     Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     let manifest = Manifest::read(&dir.path().join("manifest.json")).unwrap();
     assert_eq!(manifest.epoch, 1);
-    assert_eq!(manifest.format_version, 2);
+    assert_eq!(manifest.format_version, 3);
     assert_eq!((manifest.tombstone_generation, manifest.catalog_generation, manifest.bm25_generation), (0, 0, 0));
     assert_eq!((manifest.bm25_num_docs, manifest.bm25_num_tokens), (0, 0));
     assert_eq!(manifest.segments_per_tier, 8);

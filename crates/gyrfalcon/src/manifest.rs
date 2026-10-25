@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::store;
 
-/// 2: segments hold the owned `lexical/` index; 1 held a Tantivy directory.
-pub const FORMAT_VERSION: u32 = 2;
+/// 3: segments hold dense `codes.bin`; 2 held a USearch graph; 1 also held Tantivy.
+pub const FORMAT_VERSION: u32 = 3;
 pub const ANALYZER_ID: &str = "gyr-text-v1";
 pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-small-en-v1.5";
 pub const DEFAULT_DIMENSION: u32 = 384;
