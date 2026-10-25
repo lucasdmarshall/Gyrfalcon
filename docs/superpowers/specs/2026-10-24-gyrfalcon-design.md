@@ -724,3 +724,11 @@ fusion (rescore, dense weight 0.2) the four are 0.6980, 0.3340, 0.4575, and 0.26
 dense weight is re-chosen on validation splits, not on these test numbers.
 
 An index built with `gyr-text-v1` fails to open with `IncompatibleIndex` on `analyzer_id`.
+
+The lite default dense weight is now 0.4 (library `RESCORE_DENSE_WEIGHT` and `--tier lite`).
+On validation halves with `gyr-text-v2`, mean nDCG@10 over ORB, SciFact, NFCorpus, ArguAna, and
+FiQA was 0.5119 at 0.2, 0.5175 at 0.3, 0.5187 at 0.4, and 0.5176 at 0.5. On the test halves 0.4
+beat 0.2 significantly (paired bootstrap) on all four BEIR sets, by 0.007 to 0.012; ORB moved
+-0.006 (not significant). The full tier keeps 0.3 until its traces are re-recorded with v2.
+With these defaults Gyrfalcon's lite tier has the highest nDCG@10 of the four frameworks on all
+four BEIR sets (`bench/results/2026-10-25-cloud-4core-h2h/`).

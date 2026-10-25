@@ -3,8 +3,10 @@
 pub const RRF_K: f32 = 60.0;
 pub const LEXICAL_WEIGHT: f32 = 1.0;
 pub const DENSE_WEIGHT: f32 = 1.0;
-/// Default dense share of `Fusion::Rescore`, chosen on Open RAG Bench (see the v2 plan).
-pub const RESCORE_DENSE_WEIGHT: f32 = 0.2;
+/// Default dense share of `Fusion::Rescore`: the best mean validation nDCG@10 over Open RAG
+/// Bench and four BEIR sets with the lite tier and `gyr-text-v2` (see the spec's analyzer v2
+/// section); held-out test confirmed it.
+pub const RESCORE_DENSE_WEIGHT: f32 = 0.4;
 
 /// Sums `weight / (60 + rank)` over both legs, rank starting at 1. A hit missing from a leg
 /// adds 0. Sorted by score descending, then chunk id ascending.

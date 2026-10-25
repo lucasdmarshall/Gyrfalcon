@@ -110,7 +110,7 @@ impl Tier {
                 embedder: EmbedderKind::Static,
                 model_dir: "potion-retrieval-32M",
                 model_id: gyrfalcon::STATIC_MODEL_ID,
-                dense_alpha: 0.2,
+                dense_alpha: gyrfalcon::RESCORE_DENSE_WEIGHT,
             },
             Tier::Full => TierDefaults {
                 embedder: EmbedderKind::Ort,
