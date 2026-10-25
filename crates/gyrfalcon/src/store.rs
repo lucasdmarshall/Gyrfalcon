@@ -1,6 +1,5 @@
-//! Binary file codecs for the generation files and `terms.bin`, plus fsync helpers.
-//!
-//! Every integer is little-endian. Strings are a `u32` byte length followed by UTF-8.
+//! Small file codecs (tombstone generations, `ids.bin`) and fsync helpers. Every integer is
+//! little-endian.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -43,46 +42,6 @@ pub fn parse_segment_name(name: &str) -> Option<u64> {
     }
 }
 
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
-    what: &'a str,
-}
-
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8], what: &'a str) -> Self {
-        Reader { bytes, at: 0, what }
-    }
-
-    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        if self.at + n > self.bytes.len() {
-            return Err(Error::SegmentCorrupt(format!("{} is truncated", self.what)));
-        }
-        let out = &self.bytes[self.at..self.at + n];
-        self.at += n;
-        Ok(out)
-    }
-
-    fn u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
-    }
-
-    fn u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
-    }
-
-    fn string(&mut self) -> Result<String> {
-        let len = self.u32()? as usize;
-        String::from_utf8(self.take(len)?.to_vec())
-            .map_err(|_| Error::SegmentCorrupt(format!("{} holds invalid UTF-8", self.what)))
-    }
-}
-
-fn put_string(out: &mut Vec<u8>, value: &str) {
-    out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-    out.extend_from_slice(value.as_bytes());
-}
-
 /// `(term, doc_freq)` pairs: the collection statistics of a query's terms.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TermMap(pub BTreeMap<String, u64>);
@@ -107,62 +66,6 @@ pub fn decode_ids(bytes: &[u8]) -> Result<Vec<u64>> {
         return Err(Error::SegmentCorrupt("id array length is not a multiple of 8".into()));
     }
     Ok(bytes.chunks_exact(8).map(|b| u64::from_le_bytes(b.try_into().unwrap())).collect())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CatalogRow {
-    pub doc_id: String,
-    pub chunk_id: u64,
-    pub segment_id: u64,
-    pub byte_start: u64,
-    pub byte_end: u64,
-}
-
-/// Live rows sorted by `(doc_id, chunk_id)`.
-#[derive(Debug, Clone, Default)]
-pub struct Catalog {
-    pub rows: Vec<CatalogRow>,
-}
-
-impl Catalog {
-    pub fn from_rows(mut rows: Vec<CatalogRow>) -> Catalog {
-        rows.sort();
-        Catalog { rows }
-    }
-
-    pub fn rows_for_doc(&self, doc_id: &str) -> &[CatalogRow] {
-        let start = self.rows.partition_point(|row| row.doc_id.as_str() < doc_id);
-        let end = self.rows.partition_point(|row| row.doc_id.as_str() <= doc_id);
-        &self.rows[start..end]
-    }
-
-    pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&(self.rows.len() as u64).to_le_bytes());
-        for row in &self.rows {
-            put_string(&mut out, &row.doc_id);
-            for value in [row.chunk_id, row.segment_id, row.byte_start, row.byte_end] {
-                out.extend_from_slice(&value.to_le_bytes());
-            }
-        }
-        out
-    }
-
-    pub fn decode(bytes: &[u8]) -> Result<Catalog> {
-        let mut reader = Reader::new(bytes, "catalog");
-        let count = reader.u64()?;
-        let mut rows = Vec::with_capacity(count as usize);
-        for _ in 0..count {
-            rows.push(CatalogRow {
-                doc_id: reader.string()?,
-                chunk_id: reader.u64()?,
-                segment_id: reader.u64()?,
-                byte_start: reader.u64()?,
-                byte_end: reader.u64()?,
-            });
-        }
-        Ok(Catalog { rows })
-    }
 }
 
 /// The collection tombstone bitmap: a sorted set of dead chunk ids.

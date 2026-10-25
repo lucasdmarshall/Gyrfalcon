@@ -187,11 +187,10 @@ pub struct IngestReport {
     pub rows: Vec<IngestRow>,
 }
 
-pub const RAM_KEYS: [&str; 9] = [
+pub const RAM_KEYS: [&str; 8] = [
     "codes_bytes",
     "vectors_bin_bytes",
     "lexical_bytes",
-    "catalog_bytes",
     "tombstone_bytes",
     "rss_baseline",
     "rss_index_open",
@@ -228,7 +227,6 @@ pub fn collection_bytes(root: &std::path::Path) -> Map<String, Value> {
     out.insert("codes_bytes".into(), json!(codes));
     out.insert("vectors_bin_bytes".into(), json!(vectors));
     out.insert("lexical_bytes".into(), json!(lexical));
-    out.insert("catalog_bytes".into(), json!(size(&root.join("catalog"))));
     out.insert("tombstone_bytes".into(), json!(size(&root.join("tombstones"))));
     out
 }

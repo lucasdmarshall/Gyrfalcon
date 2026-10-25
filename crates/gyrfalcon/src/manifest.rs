@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::store;
 
-/// 4: BM25 statistics come from segment dictionaries (no `bm25/` or `terms.bin`); 3 added
-/// dense `codes.bin`; 2 held a USearch graph; 1 also held Tantivy.
-pub const FORMAT_VERSION: u32 = 4;
+/// 5: segments hold `keys.bin` instead of a collection catalog; 4 derives BM25 statistics from
+/// segment dictionaries; 3 added dense `codes.bin`; 2 held a USearch graph; 1 held Tantivy.
+pub const FORMAT_VERSION: u32 = 5;
 pub const ANALYZER_ID: &str = "gyr-text-v1";
 pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-small-en-v1.5";
 pub const DEFAULT_DIMENSION: u32 = 384;
@@ -96,7 +96,6 @@ pub struct Manifest {
     pub metric: String,
     pub analyzer_id: String,
     pub tombstone_generation: u64,
-    pub catalog_generation: u64,
     pub bm25_num_docs: u64,
     pub bm25_num_tokens: u64,
     pub segments_per_tier: u32,
@@ -120,7 +119,6 @@ impl Manifest {
             metric: "cosine".to_string(),
             analyzer_id: config.analyzer_id.clone(),
             tombstone_generation: 0,
-            catalog_generation: 0,
             bm25_num_docs: 0,
             bm25_num_tokens: 0,
             segments_per_tier: SEGMENTS_PER_TIER,

@@ -4,6 +4,7 @@
 //! segments/{segment_id}/
 //!   segment.json   identity fields and counts
 //!   ids.bin        stored chunk ids, ascending (dead ones included)
+//!   keys.bin       chunk ids sorted by caller doc_id, for delete and update
 //!   vectors.bin    quantized rows in the same order
 //!   lexical/       BM25 index and stored chunk fields, doc ordinals in ids.bin order
 //!   codes.bin      rotated sign bits per row for the dense cascade
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::keys::DocKeys;
 use crate::lexical::{self, CollectionStats, LexicalSegment, ScoredId, StoredChunk};
 use crate::manifest::{IndexConfig, Manifest};
 use crate::prepare::{PreparedText, Token};
@@ -56,6 +58,7 @@ pub struct Segment {
     pub meta: SegmentMeta,
     /// Stored chunk ids, ascending.
     pub ids: Vec<u64>,
+    pub keys: DocKeys,
     pub lexical: LexicalSegment,
     pub vector: VectorSegment,
 }
@@ -116,6 +119,7 @@ impl Segment {
                 meta.chunk_count
             )));
         }
+        let keys = DocKeys::open(&dir.join("keys.bin"))?;
         let lexical = LexicalSegment::open(&dir.join("lexical"))?;
         if lexical.num_docs() as usize != ids.len() {
             return Err(Error::SegmentCorrupt(format!(
@@ -126,7 +130,7 @@ impl Segment {
             )));
         }
         let vector = VectorSegment::open(&dir, meta.quantization, meta.dimension as usize)?;
-        Ok(Segment { id, dir, meta, ids, lexical, vector })
+        Ok(Segment { id, dir, meta, ids, keys, lexical, vector })
     }
 }
 
@@ -164,6 +168,8 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
 
         let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
         store::write_synced(&dir.join("ids.bin"), &store::encode_ids(&ids))?;
+        let pairs: Vec<(&str, u64)> = chunks.iter().map(|c| (c.doc_id.as_str(), c.chunk_id)).collect();
+        store::write_synced(&dir.join("keys.bin"), &crate::keys::encode(&pairs))?;
         let mut vectors = Vec::with_capacity(chunks.len() * row_len);
         for chunk in chunks {
             vectors.extend_from_slice(&chunk.vector);

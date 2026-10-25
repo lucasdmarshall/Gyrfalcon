@@ -693,3 +693,18 @@ are now counted from the tombstones in that segment's id range instead of a pass
 
 FiQA added in calls of 100 documents (`examples/profile_incremental`): 22.8 s to 11.9 s; in calls
 of 1,000: 5.2 s to 3.9 s.
+
+### Per-segment document keys replace the catalog (format version 5)
+
+The catalog (`catalog/{generation}.bin`, every live row's `doc_id`, chunk id, segment, and byte
+range) was rewritten and fsynced in full by every seal, delete, and merge. The byte ranges and
+`doc_key` were already stored in each segment's `docs.bin`; only the `doc_id` lookup for delete
+and update needed a collection-wide structure.
+
+Each segment now writes `keys.bin`: its chunk ids sorted by `(doc_id, chunk_id)`. A document's
+live chunks are the union over segments of that key's range, minus tombstoned ids, which is the
+set the catalog held. A delete writes only the next tombstone generation. `catalog_generation`,
+the `catalog/` directory, and the RAM report's `catalog_bytes` are gone.
+
+FiQA added in calls of 100 documents: 11.9 s to 8.8 s (22.8 s before format 4); in calls of
+10,000: 3.1 s to 2.5 s. What remains per call is mostly the new segment directory's fsyncs.

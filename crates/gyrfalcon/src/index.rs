@@ -13,7 +13,7 @@ use crate::manifest::{check_compatible, IndexConfig, Manifest};
 use crate::prepare::{prepare, prepare_with_prefix};
 use crate::rerank::{NoopReranker, Reranker};
 use crate::segment::{self, ChunkRecord, Segment};
-use crate::store::{self, Catalog, CatalogRow, Tombstones};
+use crate::store::{self, Tombstones};
 use crate::vector::quantize;
 
 /// Texts per `embed` call during ingest.
@@ -53,7 +53,6 @@ pub struct IndexReport {
 /// What a reader sees: one published manifest and the files it names.
 pub(crate) struct Snapshot {
     pub manifest: Manifest,
-    pub catalog: Arc<Catalog>,
     pub tombstones: Arc<Tombstones>,
     pub segments: Vec<Arc<Segment>>,
     /// Live (not tombstoned) chunk count per entry of `segments`.
@@ -61,12 +60,7 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn new(
-        manifest: Manifest,
-        catalog: Arc<Catalog>,
-        tombstones: Arc<Tombstones>,
-        segments: Vec<Arc<Segment>>,
-    ) -> Snapshot {
+    pub fn new(manifest: Manifest, tombstones: Arc<Tombstones>, segments: Vec<Arc<Segment>>) -> Snapshot {
         // Dead ids are few and sorted, so each segment counts its own with a range lookup.
         let live = segments
             .iter()
@@ -82,13 +76,25 @@ impl Snapshot {
                 segment.meta.chunk_count - dead
             })
             .collect();
-        Snapshot { manifest, catalog, tombstones, segments, live }
+        Snapshot { manifest, tombstones, segments, live }
     }
 
     /// Chunks holding `term` across the collection, dead ones included: the sum of every
     /// segment's dictionary.
     pub fn doc_freq(&self, term: &str) -> u64 {
         self.segments.iter().map(|segment| u64::from(segment.lexical.doc_freq(term))).sum()
+    }
+
+    /// The live chunk ids of caller document `doc_id`, ascending.
+    pub fn chunks_for_doc(&self, doc_id: &str) -> Vec<u64> {
+        let mut ids: Vec<u64> = self
+            .segments
+            .iter()
+            .flat_map(|segment| segment.keys.chunks_for(doc_id))
+            .filter(|id| !self.tombstones.contains(*id))
+            .collect();
+        ids.sort_unstable();
+        ids
     }
 
     pub fn segment_of(&self, chunk_id: u64) -> Option<&Arc<Segment>> {
@@ -105,7 +111,6 @@ impl Snapshot {
 pub(crate) struct Change {
     pub add: Vec<Arc<Segment>>,
     pub remove: Vec<u64>,
-    pub catalog: Option<Catalog>,
     pub tombstones: Option<Tombstones>,
 }
 
@@ -164,16 +169,6 @@ impl Shared {
         let mut manifest = current.manifest.clone();
         let mut retired_files = Vec::new();
 
-        let catalog = match change.catalog {
-            Some(catalog) => {
-                retired_files.push(root.join(format!("catalog/{}.bin", manifest.catalog_generation)));
-                manifest.catalog_generation += 1;
-                let path = root.join(format!("catalog/{}.bin", manifest.catalog_generation));
-                store::write_synced(&path, &catalog.encode())?;
-                Arc::new(catalog)
-            }
-            None => current.catalog.clone(),
-        };
         let tombstones = match change.tombstones {
             Some(tombstones) => {
                 retired_files.push(root.join(format!("tombstones/{}.bin", manifest.tombstone_generation)));
@@ -184,9 +179,7 @@ impl Shared {
             }
             None => current.tombstones.clone(),
         };
-        for dir in ["catalog", "tombstones"] {
-            store::sync_dir(&root.join(dir))?;
-        }
+        store::sync_dir(&root.join("tombstones"))?;
 
         let mut segments: Vec<Arc<Segment>> =
             current.segments.iter().filter(|s| !change.remove.contains(&s.id)).cloned().collect();
@@ -206,7 +199,7 @@ impl Shared {
         for file in retired_files {
             let _ = std::fs::remove_file(file);
         }
-        Ok(Snapshot::new(manifest, catalog, tombstones, segments))
+        Ok(Snapshot::new(manifest, tombstones, segments))
     }
 }
 
@@ -328,11 +321,10 @@ impl Index {
         }
         std::fs::create_dir_all(path)?;
         let lock = WriterLock::acquire(path)?;
-        for dir in ["tombstones", "catalog", "segments"] {
+        for dir in ["tombstones", "segments"] {
             std::fs::create_dir_all(path.join(dir))?;
         }
         store::write_synced(&path.join("tombstones/0.bin"), &Tombstones::default().encode())?;
-        store::write_synced(&path.join("catalog/0.bin"), &Catalog::default().encode())?;
         let manifest = Manifest::new(config);
         manifest.publish(path)?;
         Index::from_manifest(path, manifest, lock)
@@ -389,8 +381,6 @@ impl Index {
     }
 
     fn from_manifest(path: &Path, manifest: Manifest, lock: WriterLock) -> Result<Index> {
-        let catalog =
-            Catalog::decode(&std::fs::read(path.join(format!("catalog/{}.bin", manifest.catalog_generation)))?)?;
         let tombstones = Tombstones::decode(&std::fs::read(
             path.join(format!("tombstones/{}.bin", manifest.tombstone_generation)),
         )?)?;
@@ -408,7 +398,7 @@ impl Index {
             next_segment_id: AtomicU64::new(manifest.next_segment_id),
             reaper: Mutex::new(Reaper::default()),
             merge: crate::merge::MergeControl::default(),
-            state: Mutex::new(Arc::new(Snapshot::new(manifest, Arc::new(catalog), Arc::new(tombstones), segments))),
+            state: Mutex::new(Arc::new(Snapshot::new(manifest, Arc::new(tombstones), segments))),
         });
         let embedder: Arc<dyn Embedder> = Arc::new(HashEmbedder::new(shared.config.dimension));
         Ok(Index {
@@ -624,16 +614,15 @@ impl Index {
         state: &mut MutexGuard<'_, Arc<Snapshot>>,
         records: Vec<ChunkRecord>,
     ) -> Result<IndexReport> {
-        self.seal_records_replacing(state, records, "", &[])
+        self.seal_records_replacing(state, records, &[])
     }
 
-    /// `seal_records` that also tombstones `previous` (the old chunks of `doc_id`) and drops
-    /// their catalog rows in the rename that publishes the last new segment.
+    /// `seal_records` that also tombstones `previous` (a document's old chunks) in the rename
+    /// that publishes the last new segment.
     pub(crate) fn seal_records_replacing(
         &self,
         state: &mut MutexGuard<'_, Arc<Snapshot>>,
         mut records: Vec<ChunkRecord>,
-        doc_id: &str,
         previous: &[u64],
     ) -> Result<IndexReport> {
         let mut report = IndexReport { epoch: state.manifest.epoch, ..IndexReport::default() };
@@ -644,12 +633,7 @@ impl Index {
         let groups = records.len().div_ceil(self.seal_every.max(1));
         if groups == 0 && !previous.is_empty() {
             // An update to empty text only removes the old chunks.
-            let rows = state.catalog.rows.iter().filter(|row| !previous.contains(&row.chunk_id)).cloned().collect();
-            let change = Change {
-                catalog: Some(Catalog::from_rows(rows)),
-                tombstones: Some(state.tombstones.with(previous)),
-                ..Change::default()
-            };
+            let change = Change { tombstones: Some(state.tombstones.with(previous)), ..Change::default() };
             let next = self.shared.publish(state, change, self.fail_before_rename)?;
             **state = Arc::new(next);
             report.epoch = state.manifest.epoch;
@@ -659,27 +643,8 @@ impl Index {
             let id = self.shared.allocate_segment_id();
             segment::write_segment(&self.shared.root, id, &self.shared.config, group)?;
             let sealed = Arc::new(Segment::open(&self.shared.root, id, &state.manifest)?);
-            let mut rows: Vec<CatalogRow> = if last && !previous.is_empty() {
-                state
-                    .catalog
-                    .rows
-                    .iter()
-                    .filter(|row| !(row.doc_id == doc_id && previous.contains(&row.chunk_id)))
-                    .cloned()
-                    .collect()
-            } else {
-                state.catalog.rows.clone()
-            };
-            rows.extend(group.iter().map(|record| CatalogRow {
-                doc_id: record.doc_id.clone(),
-                chunk_id: record.chunk_id,
-                segment_id: id,
-                byte_start: record.byte_start,
-                byte_end: record.byte_end,
-            }));
             let change = Change {
                 add: vec![sealed],
-                catalog: Some(Catalog::from_rows(rows)),
                 tombstones: (last && !previous.is_empty()).then(|| state.tombstones.with(previous)),
                 ..Change::default()
             };

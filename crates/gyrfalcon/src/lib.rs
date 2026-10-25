@@ -12,6 +12,7 @@ mod error;
 mod fuse;
 mod http;
 mod index;
+mod keys;
 mod lexical;
 mod manifest;
 mod merge;

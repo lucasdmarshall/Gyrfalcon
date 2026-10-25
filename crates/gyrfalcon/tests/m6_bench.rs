@@ -94,7 +94,6 @@ fn ram_report_lists_the_byte_counts() {
         "codes_bytes",
         "vectors_bin_bytes",
         "lexical_bytes",
-        "catalog_bytes",
         "tombstone_bytes",
         "rss_model_loaded",
         "rss_model_dropped",

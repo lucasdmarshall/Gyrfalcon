@@ -1,7 +1,7 @@
 //! The background merger: tiered merges of small segments, then a dead-ratio rewrite of one
 //! large segment. Builds run outside the writer lock; the swap is one manifest rename.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
@@ -12,7 +12,6 @@ use crate::index::{Change, Index, Shared};
 use crate::manifest::{DEAD_RATIO_LIMIT, MAX_MERGE_CHUNKS, SEGMENTS_PER_TIER};
 use crate::prepare::{prepare, prepare_with_prefix};
 use crate::segment::{self, ChunkRecord, Segment};
-use crate::store::{Catalog, CatalogRow};
 
 /// Picks the lowest tier holding at least 8 segments whose 8 smallest counts sum to at most
 /// 100,000. A segment of 100,000 chunks or more is never an input. Tier is
@@ -200,7 +199,6 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
 
     // Step 3: swap under the writer lock against the manifest as it is now.
     let mut state = shared.lock();
-    let input_ids: HashSet<u64> = inputs.iter().map(|s| s.id).collect();
     if !inputs.iter().all(|input| state.segments.iter().any(|s| s.id == input.id)) {
         drop(state);
         abandon(&dir);
@@ -215,21 +213,6 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
         }
     };
     let current_dead = state.tombstones.clone();
-    let rows: Vec<CatalogRow> = state
-        .catalog
-        .rows
-        .iter()
-        .filter_map(|row| {
-            if !input_ids.contains(&row.segment_id) {
-                return Some(row.clone());
-            }
-            // A row whose id is dead now stays dead; it is not retargeted.
-            if current_dead.contains(row.chunk_id) || !merged.contains(row.chunk_id) {
-                return None;
-            }
-            Some(CatalogRow { segment_id: new_id, ..row.clone() })
-        })
-        .collect();
     let tombstones = match kind {
         Kind::Tier => None,
         Kind::DeadRatio | Kind::All => {
@@ -243,12 +226,7 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
             Some(current_dead.without(&dropped))
         }
     };
-    let change = Change {
-        add: vec![merged],
-        remove: inputs.iter().map(|s| s.id).collect(),
-        catalog: Some(Catalog::from_rows(rows)),
-        tombstones,
-    };
+    let change = Change { add: vec![merged], remove: inputs.iter().map(|s| s.id).collect(), tombstones };
     let next = match shared.publish(&state, change, false) {
         Ok(next) => next,
         Err(err) => {
