@@ -276,6 +276,8 @@ fn query_list(docs: &[Document], count: usize) -> Vec<String> {
 
 /// Indexes `docs` into `segments` sealed segments, as evenly as the document count allows.
 fn build_layout(index: &mut Index, docs: &[Document], segments: usize) -> Result<(), Error> {
+    // Every call seals, so the layout has exactly the segments asked for.
+    index.write_buffer = 0;
     if segments <= 1 {
         index.index_documents(docs)?;
         index.wait_until_merge_idle();
@@ -450,6 +452,7 @@ fn ingest_row(files: &[PathBuf], auto_merge: bool, prefix: bool, model: &ModelAr
         chunks += index.index_documents(std::slice::from_ref(&doc))?.chunk_ids.len();
     }
     let seal = started.elapsed().as_secs_f64();
+    index.flush()?;
     index.wait_until_merge_idle();
     let total = started.elapsed().as_secs_f64();
     if let Some(err) = index.merge_error() {
@@ -648,6 +651,7 @@ fn bench_trace(
         for batch in set.docs.chunks(10_000) {
             index.index_sections(batch)?;
         }
+        index.flush()?;
         index.wait_until_merge_idle();
         eprintln!("{}: indexed {} docs in {:.0}s", set.name, set.docs.len(), started.elapsed().as_secs_f64());
         // Warm the page cache and stored-field caches, so pass 1 and the live check that
@@ -900,6 +904,7 @@ fn bench_beir(
             done += batch.len();
             eprintln!("{name}: indexed {done}/{} docs, {:.0}s", docs.len(), started.elapsed().as_secs_f64());
         }
+        index.flush()?;
         index.wait_until_merge_idle();
         let index_seconds = started.elapsed().as_secs_f64();
         environment.get_or_insert_with(|| BenchEnvironment::detect(index.config()));
@@ -1119,6 +1124,7 @@ fn run_accuracy(
     for batch in docs.chunks(10_000) {
         chunk_count += index.index_sections(batch)?.chunk_ids.len();
     }
+    index.flush()?;
     index.wait_until_merge_idle();
     eprintln!("chunks {chunk_count}");
     let chat = model.chat_endpoint.as_ref().map(|endpoint| ChatConfig {

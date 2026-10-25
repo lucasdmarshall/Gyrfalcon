@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
+use crate::buffer::{Batch, Pending};
 use crate::chunk::chunk;
 use crate::embed::{Embedder, HashEmbedder};
 use crate::epoch::{ReaderGuard, Reaper};
@@ -15,12 +16,21 @@ use crate::rerank::{NoopReranker, Reranker};
 use crate::segment::{self, ChunkRecord, Segment};
 use crate::store::{self, Tombstones};
 use crate::vector::quantize;
+use crate::wal::{wal_path, Frame, Wal, WalChunk};
 
 /// Texts per `embed` call during ingest.
 pub const EMBED_BATCH: usize = 32;
 
 /// The open segment seals when it reaches this many chunks.
 pub const SEAL_EVERY: usize = 100_000;
+/// Default `Index::write_buffer`: the buffer seals at this many chunks.
+pub const WRITE_BUFFER: usize = 4096;
+/// Writes of fewer chunks than this (and than `write_buffer`) are logged and buffered. A larger
+/// write seals directly: its fixed seal cost is small per chunk, and buffering it would only
+/// copy it again at the next seal.
+pub const BUFFERED_WRITE_MAX: usize = 256;
+/// The buffer also seals once its bodies and vectors hold this many bytes.
+pub const WRITE_BUFFER_BYTES: usize = 32 << 20;
 /// Sealed segment count above which reports carry `warning: "segment_count"`.
 pub const FAN_OUT_WARNING: usize = 32;
 
@@ -53,14 +63,22 @@ pub struct IndexReport {
 /// What a reader sees: one published manifest and the files it names.
 pub(crate) struct Snapshot {
     pub manifest: Manifest,
+    /// The tombstone file of the manifest plus ids killed by logged writes.
     pub tombstones: Arc<Tombstones>,
     pub segments: Vec<Arc<Segment>>,
     /// Live (not tombstoned) chunk count per entry of `segments`.
     pub live: Vec<u64>,
+    /// Chunks written since the last seal, durable in the WAL.
+    pub pending: Pending,
 }
 
 impl Snapshot {
-    pub fn new(manifest: Manifest, tombstones: Arc<Tombstones>, segments: Vec<Arc<Segment>>) -> Snapshot {
+    pub fn new(
+        manifest: Manifest,
+        tombstones: Arc<Tombstones>,
+        segments: Vec<Arc<Segment>>,
+        pending: Pending,
+    ) -> Snapshot {
         // Dead ids are few and sorted, so each segment counts its own with a range lookup.
         let live = segments
             .iter()
@@ -76,13 +94,47 @@ impl Snapshot {
                 segment.meta.chunk_count - dead
             })
             .collect();
-        Snapshot { manifest, tombstones, segments, live }
+        Snapshot { manifest, tombstones, segments, live, pending }
     }
 
     /// Chunks holding `term` across the collection, dead ones included: the sum of every
-    /// segment's dictionary.
+    /// segment's dictionary and the buffer.
     pub fn doc_freq(&self, term: &str) -> u64 {
-        self.segments.iter().map(|segment| u64::from(segment.lexical.doc_freq(term))).sum()
+        self.segments.iter().map(|segment| u64::from(segment.lexical.doc_freq(term))).sum::<u64>()
+            + self.pending.doc_freq(term)
+    }
+
+    /// BM25 `(num_docs, num_tokens)` over segments and buffer, dead chunks included.
+    pub fn bm25_totals(&self) -> (u64, u64) {
+        (
+            self.manifest.bm25_num_docs + self.pending.len() as u64,
+            self.manifest.bm25_num_tokens + self.pending.num_tokens(),
+        )
+    }
+
+    /// Whether `chunk_id` is stored in a segment or the buffer, dead or alive.
+    pub fn stores(&self, chunk_id: u64) -> bool {
+        self.segment_of(chunk_id).is_some() || self.pending.find(chunk_id).is_some()
+    }
+
+    /// The stored fields of `chunk_id`, from its segment or the buffer.
+    pub fn stored(&self, chunk_id: u64) -> Result<Option<crate::lexical::StoredChunk>> {
+        if let Some(record) = self.pending.find(chunk_id) {
+            return Ok(Some(crate::buffer::stored(record)));
+        }
+        match self.segment_of(chunk_id) {
+            Some(segment) => segment.stored(chunk_id),
+            None => Ok(None),
+        }
+    }
+
+    /// The stored vector of `chunk_id` as `f32`, scaled as stored.
+    pub fn stored_vector(&self, chunk_id: u64) -> Option<Vec<f32>> {
+        if let Some(record) = self.pending.find(chunk_id) {
+            return Some(crate::vector::row_values(self.manifest.quantization, &record.vector));
+        }
+        let segment = self.segment_of(chunk_id)?;
+        segment.vector.stored_vector(chunk_id, &segment.ids)
     }
 
     /// The live chunk ids of caller document `doc_id`, ascending.
@@ -91,6 +143,7 @@ impl Snapshot {
             .segments
             .iter()
             .flat_map(|segment| segment.keys.chunks_for(doc_id))
+            .chain(self.pending.records().filter(|r| r.doc_id == doc_id).map(|r| r.chunk_id))
             .filter(|id| !self.tombstones.contains(*id))
             .collect();
         ids.sort_unstable();
@@ -112,6 +165,8 @@ pub(crate) struct Change {
     pub add: Vec<Arc<Segment>>,
     pub remove: Vec<u64>,
     pub tombstones: Option<Tombstones>,
+    /// The buffer was sealed into `add`: start an empty WAL generation.
+    pub sealed_buffer: bool,
 }
 
 pub(crate) struct Shared {
@@ -123,6 +178,8 @@ pub(crate) struct Shared {
     pub next_segment_id: AtomicU64,
     pub reaper: Mutex<Reaper>,
     pub merge: crate::merge::MergeControl,
+    /// The open WAL generation; appended under `state`.
+    pub wal: Mutex<Wal>,
 }
 
 impl Shared {
@@ -191,15 +248,25 @@ impl Shared {
         manifest.epoch += 1;
         manifest.next_chunk_id = self.next_chunk_id.load(Ordering::SeqCst);
         manifest.next_segment_id = self.next_segment_id.load(Ordering::SeqCst);
+        if change.sealed_buffer {
+            retired_files.push(wal_path(root, manifest.wal_generation));
+            manifest.wal_generation += 1;
+        }
 
         if fail_before_rename {
             return Err(Error::InjectedFailure);
         }
         manifest.publish(root)?;
+        let pending = if change.sealed_buffer {
+            *self.wal.lock().unwrap_or_else(|p| p.into_inner()) = Wal::open(&wal_path(root, manifest.wal_generation))?;
+            Pending::default()
+        } else {
+            current.pending.clone()
+        };
         for file in retired_files {
             let _ = std::fs::remove_file(file);
         }
-        Ok(Snapshot::new(manifest, tombstones, segments))
+        Ok(Snapshot::new(manifest, tombstones, segments, pending))
     }
 }
 
@@ -298,6 +365,10 @@ pub struct Index {
     pub fail_before_rename: bool,
     /// The open segment seals at this many chunks.
     pub seal_every: usize,
+    /// Writes of fewer chunks than this and than `BUFFERED_WRITE_MAX` go to the WAL and the
+    /// in-memory buffer, which seals once it holds this many chunks or `WRITE_BUFFER_BYTES`.
+    /// 0 seals every write directly.
+    pub write_buffer: usize,
     /// Run the background merger after writes. On by default.
     pub auto_merge: bool,
     /// Test hook: the merger blocks after its build and before the swap.
@@ -391,14 +462,32 @@ impl Index {
             segments.push(Arc::new(Segment::open(path, id, &manifest)?));
         }
         let config = manifest.config();
+        // Logged writes since the last seal: their chunks become the buffer, their dead ids
+        // join the tombstones, and chunk ids continue after the highest one logged.
+        let wal_file = wal_path(path, manifest.wal_generation);
+        let mut records = Vec::new();
+        let mut dead = Vec::new();
+        for frame in crate::wal::replay(&wal_file)? {
+            records.extend(frame.chunks.into_iter().map(record_from_wal));
+            dead.extend(frame.dead);
+        }
+        let next_chunk_id = records.iter().map(|r| r.chunk_id + 1).max().unwrap_or(0).max(manifest.next_chunk_id);
+        let pending = if records.is_empty() {
+            Pending::default()
+        } else {
+            let records = records.into_iter().map(Arc::new).collect();
+            Pending::default().with(Batch::new(records, config.quantization), config.quantization)
+        };
+        let tombstones = if dead.is_empty() { tombstones } else { tombstones.with(&dead) };
         let shared = Arc::new(Shared {
             root: path.to_path_buf(),
             config,
-            next_chunk_id: AtomicU64::new(manifest.next_chunk_id),
+            next_chunk_id: AtomicU64::new(next_chunk_id),
             next_segment_id: AtomicU64::new(manifest.next_segment_id),
             reaper: Mutex::new(Reaper::default()),
             merge: crate::merge::MergeControl::default(),
-            state: Mutex::new(Arc::new(Snapshot::new(manifest, Arc::new(tombstones), segments))),
+            wal: Mutex::new(Wal::open(&wal_file)?),
+            state: Mutex::new(Arc::new(Snapshot::new(manifest, Arc::new(tombstones), segments, pending))),
         });
         let embedder: Arc<dyn Embedder> = Arc::new(HashEmbedder::new(shared.config.dimension));
         Ok(Index {
@@ -408,6 +497,7 @@ impl Index {
             chat: None,
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
+            write_buffer: WRITE_BUFFER,
             rrf_weights: [crate::fuse::LEXICAL_WEIGHT, crate::fuse::DENSE_WEIGHT],
             fusion: crate::fuse::Fusion::Rescore { dense_weight: crate::fuse::RESCORE_DENSE_WEIGHT },
             auto_merge: true,
@@ -525,12 +615,89 @@ impl Index {
     pub(crate) fn seal_and_report(&mut self, records: Vec<ChunkRecord>) -> Result<IndexReport> {
         let shared = self.shared.clone();
         let mut state = shared.lock();
-        let report = self.seal_records(&mut state, records)?;
+        let report = if self.buffers(records.len()) {
+            self.log_records(&mut state, records, &[])?
+        } else {
+            self.seal_records(&mut state, records)?
+        };
         drop(state);
         self.after_publish();
         self.schedule_merge();
         self.last_report = report.clone();
         Ok(report)
+    }
+
+    /// Whether a write of `chunks` chunks goes to the WAL and the buffer.
+    pub(crate) fn buffers(&self, chunks: usize) -> bool {
+        chunks < self.write_buffer.min(BUFFERED_WRITE_MAX)
+    }
+
+    /// Seals the write buffer into a segment now. A no-op when it is empty.
+    pub fn flush(&mut self) -> Result<IndexReport> {
+        let shared = self.shared.clone();
+        let mut state = shared.lock();
+        let mut report = IndexReport { epoch: state.manifest.epoch, ..IndexReport::default() };
+        self.seal_buffer(&mut state, &mut report)?;
+        drop(state);
+        if !report.sealed.is_empty() {
+            self.after_publish();
+            self.schedule_merge();
+        }
+        Ok(report)
+    }
+
+    /// Allocates chunk ids for `records`, logs them with the `dead` ids in one WAL frame, and
+    /// adds them to the buffer and the tombstones. Seals the buffer once it is full.
+    pub(crate) fn log_records(
+        &self,
+        state: &mut MutexGuard<'_, Arc<Snapshot>>,
+        mut records: Vec<ChunkRecord>,
+        dead: &[u64],
+    ) -> Result<IndexReport> {
+        let mut report = IndexReport { epoch: state.manifest.epoch, ..IndexReport::default() };
+        for record in &mut records {
+            record.chunk_id = self.shared.next_chunk_id.fetch_add(1, Ordering::SeqCst);
+            report.chunk_ids.push(record.chunk_id);
+        }
+        let frame = Frame { chunks: records.iter().map(wal_chunk).collect(), dead: dead.to_vec() };
+        self.shared.wal.lock().unwrap_or_else(|p| p.into_inner()).append(&frame)?;
+        let quantization = self.shared.config.quantization;
+        let pending = if records.is_empty() {
+            state.pending.clone()
+        } else {
+            state.pending.with(Batch::new(records.into_iter().map(Arc::new).collect(), quantization), quantization)
+        };
+        let tombstones = if dead.is_empty() { state.tombstones.clone() } else { Arc::new(state.tombstones.with(dead)) };
+        let next = Snapshot::new(state.manifest.clone(), tombstones, state.segments.clone(), pending);
+        **state = Arc::new(next);
+        if state.pending.len() >= self.write_buffer.max(1) || state.pending.bytes() >= WRITE_BUFFER_BYTES {
+            self.seal_buffer(state, &mut report)?;
+        }
+        report.warning = state.warning();
+        Ok(report)
+    }
+
+    /// Writes the buffer as one segment and publishes it with the tombstones it logged, which
+    /// starts an empty WAL generation.
+    fn seal_buffer(&self, state: &mut MutexGuard<'_, Arc<Snapshot>>, report: &mut IndexReport) -> Result<()> {
+        if state.pending.is_empty() {
+            return Ok(());
+        }
+        let records: Vec<ChunkRecord> = state.pending.records().cloned().collect();
+        let id = self.shared.allocate_segment_id();
+        segment::write_segment(&self.shared.root, id, &self.shared.config, &records)?;
+        let sealed = Arc::new(Segment::open(&self.shared.root, id, &state.manifest)?);
+        let change = Change {
+            add: vec![sealed],
+            tombstones: Some(state.tombstones.as_ref().clone()),
+            sealed_buffer: true,
+            ..Change::default()
+        };
+        let next = self.shared.publish(state, change, self.fail_before_rename)?;
+        **state = Arc::new(next);
+        report.sealed.push(store::segment_name(id));
+        report.epoch = state.manifest.epoch;
+        Ok(())
     }
 
     /// Runs after every successful write publish: retries queued deletes.
@@ -664,6 +831,36 @@ impl Drop for Index {
     }
 }
 
+/// A logged chunk as a record, its tokens recomputed by `prepare`.
+fn record_from_wal(chunk: WalChunk) -> ChunkRecord {
+    let prepared = match &chunk.prefix {
+        Some(prefix) => prepare_with_prefix(prefix, &chunk.body),
+        None => prepare(&chunk.body),
+    };
+    ChunkRecord {
+        chunk_id: chunk.chunk_id,
+        doc_id: chunk.doc_id,
+        byte_start: chunk.byte_start,
+        byte_end: chunk.byte_end,
+        body: chunk.body,
+        prefix: chunk.prefix,
+        prepared,
+        vector: chunk.vector,
+    }
+}
+
+fn wal_chunk(record: &ChunkRecord) -> WalChunk {
+    WalChunk {
+        chunk_id: record.chunk_id,
+        doc_id: record.doc_id.clone(),
+        byte_start: record.byte_start,
+        byte_end: record.byte_end,
+        body: record.body.clone(),
+        prefix: record.prefix.clone(),
+        vector: record.vector.clone(),
+    }
+}
+
 /// Removes segment directories and a stale `manifest.json.tmp` the manifest does not name.
 /// Called at open, before any reader exists in this process.
 fn remove_unreferenced(root: &Path, manifest: &Manifest) -> Result<()> {
@@ -676,6 +873,15 @@ fn remove_unreferenced(root: &Path, manifest: &Manifest) -> Result<()> {
             let name = name.to_string_lossy();
             if !listed.contains(name.as_ref()) {
                 std::fs::remove_dir_all(entry.path())?;
+            }
+        }
+    }
+    // WAL generations other than the manifest's were sealed already, or never published.
+    let current = wal_path(root, manifest.wal_generation);
+    if let Ok(entries) = std::fs::read_dir(root.join("wal")) {
+        for entry in entries.flatten() {
+            if entry.path() != current {
+                std::fs::remove_file(entry.path())?;
             }
         }
     }

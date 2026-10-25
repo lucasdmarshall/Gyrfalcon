@@ -42,13 +42,18 @@ impl Index {
         let mut doomed: Vec<u64> = ids
             .iter()
             .copied()
-            .filter(|id| !state.tombstones.contains(*id) && state.segment_of(*id).is_some())
+            .filter(|id| !state.tombstones.contains(*id) && state.stores(*id))
             .collect::<HashSet<u64>>()
             .into_iter()
             .collect();
         doomed.sort_unstable();
         if doomed.is_empty() {
             return Ok(DeleteReport { deleted_chunks: 0, epoch: state.manifest.epoch });
+        }
+        if self.write_buffer > 0 {
+            // A logged delete: one WAL frame, published with the next buffer seal.
+            let report = self.log_records(&mut state, Vec::new(), &doomed)?;
+            return Ok(DeleteReport { deleted_chunks: doomed.len(), epoch: report.epoch.max(state.manifest.epoch) });
         }
         let change = Change { tombstones: Some(state.tombstones.with(&doomed)), ..Change::default() };
         let next = shared.publish(&state, change, self.fail_before_rename)?;
@@ -65,7 +70,12 @@ impl Index {
         let shared = self.shared.clone();
         let mut state = shared.lock();
         let previous = state.chunks_for_doc(&doc.doc_id);
-        let report = self.seal_records_replacing(&mut state, records, &previous)?;
+        // The new chunks and the old ids go into one WAL frame or one manifest rename.
+        let report = if self.buffers(records.len()) {
+            self.log_records(&mut state, records, &previous)?
+        } else {
+            self.seal_records_replacing(&mut state, records, &previous)?
+        };
         drop(state);
         self.after_publish();
         self.schedule_merge();

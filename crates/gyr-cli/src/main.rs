@@ -303,6 +303,7 @@ fn run(cli: Cli) -> Result<(), Error> {
             for doc in read_documents(&files)? {
                 chunks += index.index_documents(std::slice::from_ref(&doc))?.chunk_ids.len();
             }
+            index.flush()?;
             index.wait_until_merge_idle();
             index.reap_now();
             let manifest = index.manifest();

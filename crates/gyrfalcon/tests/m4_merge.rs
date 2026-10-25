@@ -3,6 +3,8 @@ use gyrfalcon::{Document, Index, IndexConfig, RetrieveOptions};
 fn two_rust_docs() -> Index {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    // Merge tests count segments: every write seals.
+    index.write_buffer = 0;
     index.index_documents(&[Document::body("a", "rust safety"), Document::body("b", "rust cooking")]).unwrap();
     index.leak_tempdir(dir);
     index
@@ -11,6 +13,8 @@ fn two_rust_docs() -> Index {
 fn eight_small_segments() -> Index {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    // Merge tests count segments: every write seals.
+    index.write_buffer = 0;
     index.pause_merge_after_copy = true;
     for i in 0..8 {
         let doc_id = match i {
@@ -27,6 +31,8 @@ fn eight_small_segments() -> Index {
 
 fn eight_tens_and_one_thousand() -> Index {
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
+    // Merge tests count segments: every write seals.
+    index.write_buffer = 0;
     index.seal_n_chunks(1_000, "word").unwrap();
     for _ in 0..8 {
         index.seal_n_chunks(10, "word").unwrap();
@@ -36,6 +42,8 @@ fn eight_tens_and_one_thousand() -> Index {
 
 fn one_segment_with_stored_count(n: usize) -> Index {
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
+    // Merge tests count segments: every write seals.
+    index.write_buffer = 0;
     index.seal_n_chunks(n, "shared").unwrap();
     index
 }
@@ -94,6 +102,8 @@ fn crashed_update_keeps_the_old_document_retrievable() {
 #[test]
 fn merge_of_the_dead_chunk_segment_drops_doc_freq_by_one() {
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
+    // Merge tests count segments: every write seals.
+    index.write_buffer = 0;
     for i in 0..7 {
         index.index_documents(&[Document::body(format!("d{i}"), "common words")]).unwrap();
     }
@@ -234,6 +244,8 @@ fn compact_all_rewrites_everything_and_clears_tombstones() {
 #[test]
 fn thirty_three_segments_warn() {
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
+    // Merge tests count segments: every write seals.
+    index.write_buffer = 0;
     index.auto_merge = false;
     for i in 0..33 {
         index.index_documents(&[Document::body(format!("d{i}"), "word")]).unwrap();

@@ -226,7 +226,8 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
             Some(current_dead.without(&dropped))
         }
     };
-    let change = Change { add: vec![merged], remove: inputs.iter().map(|s| s.id).collect(), tombstones };
+    let change =
+        Change { add: vec![merged], remove: inputs.iter().map(|s| s.id).collect(), tombstones, ..Change::default() };
     let next = match shared.publish(&state, change, false) {
         Ok(next) => next,
         Err(err) => {
@@ -296,8 +297,9 @@ impl Index {
         self.shared.merge.lock().last_error.clone()
     }
 
-    /// One synchronous tier pass (`gyr compact`).
+    /// Seals the write buffer, then one synchronous tier pass (`gyr compact`).
     pub fn compact(&mut self) -> Result<bool> {
+        self.flush()?;
         self.wait_until_merge_idle();
         let published = run_pass(&self.shared, false)?;
         self.after_publish();
@@ -307,6 +309,7 @@ impl Index {
     /// Rewrites every segment into one from its live chunks, keeps their chunk ids, clears the
     /// tombstone bitmap, and queues the old directories for the reaper (`gyr compact --all`).
     pub fn compact_all(&mut self) -> Result<bool> {
+        self.flush()?;
         self.wait_until_merge_idle();
         let published = run_pass(&self.shared, true)?;
         self.after_publish();
@@ -375,8 +378,10 @@ impl Index {
             });
         }
         let seal_every = std::mem::replace(&mut self.seal_every, n.max(1));
+        let write_buffer = std::mem::replace(&mut self.write_buffer, 0);
         let result = self.seal_and_report(records);
         self.seal_every = seal_every;
+        self.write_buffer = write_buffer;
         result.map(|_| ())
     }
 }

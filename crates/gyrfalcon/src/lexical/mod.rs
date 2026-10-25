@@ -41,7 +41,7 @@ const NORMS_MAGIC: &[u8; 8] = b"GYRNORM1";
 const DICT_HEADER: usize = 24;
 const DICT_ENTRY: usize = 17;
 
-const K1: f32 = 1.2;
+pub(crate) const K1: f32 = 1.2;
 const B: f32 = 0.75;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -94,14 +94,14 @@ pub fn fieldnorm_to_id(length: u32) -> u8 {
 }
 
 /// Tantivy's `idf`, in `f32` like Tantivy computes it.
-fn idf(doc_freq: u64, doc_count: u64) -> f32 {
+pub(crate) fn idf(doc_freq: u64, doc_count: u64) -> f32 {
     let doc_freq = doc_freq.min(doc_count);
     let x = ((doc_count - doc_freq) as f32 + 0.5) / (doc_freq as f32 + 0.5);
     (1.0 + x).ln()
 }
 
 /// `k1 * (1 - b + b * length / average)` for every norm byte.
-fn length_factors(average: f32) -> [f32; 256] {
+pub(crate) fn length_factors(average: f32) -> [f32; 256] {
     let mut factors = [0f32; 256];
     for (id, factor) in factors.iter_mut().enumerate() {
         *factor = K1 * (1.0 - B + B * NORM_TABLE[id] as f32 / average);

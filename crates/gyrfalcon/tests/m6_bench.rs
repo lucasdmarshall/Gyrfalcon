@@ -81,7 +81,8 @@ fn bench_ingest_waits_for_the_merger() {
     assert_eq!(headline["segment_count"], 1);
     let seal_only = rows.iter().find(|row| row["auto_merge"] == false).unwrap();
     assert_eq!(seal_only["headline"], false);
-    assert_eq!(seal_only["segment_count"], 8);
+    // Eight small files go through the write buffer and seal once at the end.
+    assert_eq!(seal_only["segment_count"], 1);
     for key in ["docs_per_sec", "chunks_per_sec", "seal_wall_seconds", "merge_wall_seconds"] {
         assert!(headline[key].is_number(), "{key}");
     }

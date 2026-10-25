@@ -61,16 +61,17 @@ pub struct DenseHits {
 }
 
 pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -> Result<Vec<ScoredId>> {
-    // Collection doc freqs of the query terms only, summed over the segment dictionaries.
+    // Collection doc freqs of the query terms only, summed over the segment dictionaries
+    // and the write buffer.
     let terms = TermMap(tokens.iter().map(|t| (t.text.clone(), snapshot.doc_freq(&t.text))).collect());
-    let stats = CollectionStats {
-        num_docs: snapshot.manifest.bm25_num_docs,
-        num_tokens: snapshot.manifest.bm25_num_tokens,
-        terms: &terms,
-    };
+    let (num_docs, num_tokens) = snapshot.bm25_totals();
+    let stats = CollectionStats { num_docs, num_tokens, terms: &terms };
     let mut merged = Vec::new();
     for segment in &snapshot.segments {
         merged.extend(segment.search_lexical(tokens, limit, &stats, &snapshot.tombstones)?);
+    }
+    for batch in &snapshot.pending.batches {
+        merged.extend(batch.search_lexical(tokens, &stats, &snapshot.tombstones));
     }
     merged.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.chunk_id.cmp(&b.chunk_id)));
     merged.truncate(limit);
@@ -99,6 +100,10 @@ pub(crate) fn dense_leg(snapshot: &Snapshot, query: &DenseQuery, limit: usize) -
         let mut rows: Vec<u32> = group.iter().map(|(_, _, row)| *row).collect();
         merged.extend(segment.vector.exact(query, &mut rows, &segment.ids));
     }
+    // The write buffer is small and scanned exactly.
+    for batch in &snapshot.pending.batches {
+        merged.extend(batch.search_dense(query, &snapshot.tombstones));
+    }
     merged.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
     merged.truncate(limit);
     Ok(DenseHits {
@@ -110,8 +115,7 @@ pub(crate) fn dense_leg(snapshot: &Snapshot, query: &DenseQuery, limit: usize) -
 }
 
 pub(crate) fn hit_for(snapshot: &Snapshot, chunk_id: u64, score: f32) -> Result<Option<Hit>> {
-    let Some(segment) = snapshot.segment_of(chunk_id) else { return Ok(None) };
-    Ok(segment.stored(chunk_id)?.map(|stored| Hit {
+    Ok(snapshot.stored(chunk_id)?.map(|stored| Hit {
         chunk_id,
         doc_id: stored.doc_key,
         body: stored.body,
@@ -168,8 +172,7 @@ impl Index {
                 let sims: Vec<(u64, f32)> = candidates
                     .into_iter()
                     .filter_map(|id| {
-                        let segment = snapshot.segment_of(id)?;
-                        let stored = segment.vector.stored_vector(id, &segment.ids)?;
+                        let stored = snapshot.stored_vector(id)?;
                         Some((id, 1.0 - crate::vector::cosine_distance(query, &stored)))
                     })
                     .collect();

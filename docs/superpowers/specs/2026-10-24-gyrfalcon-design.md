@@ -732,3 +732,29 @@ beat 0.2 significantly (paired bootstrap) on all four BEIR sets, by 0.007 to 0.0
 -0.006 (not significant). The full tier keeps 0.3 until its traces are re-recorded with v2.
 With these defaults Gyrfalcon's lite tier has the highest nDCG@10 of the four frameworks on all
 four BEIR sets (`bench/results/2026-10-25-cloud-4core-h2h/`).
+
+### Write buffer and WAL (format version 6)
+
+Every write used to seal its own segment directory: about ten files, a dozen fsyncs, and one
+more segment for queries to visit, about 10 ms per call however small. A write of fewer than
+`min(write_buffer, BUFFERED_WRITE_MAX)` chunks (4096 and 256 by default) now appends one frame
+to `wal/{wal_generation}.log` and fsyncs it (about 0.3 ms here). The frame holds the new chunks
+(text, byte range, quantized vector) and the chunk ids the call kills, so an update's new chunks
+and its tombstones are durable together, and a delete is one frame. The chunks join an
+in-memory buffer that queries search at once: BM25 with the same length norms and arithmetic as
+a sealed segment, and an exact dense scan, so a chunk scores identically before and after its
+seal (`tests/w1_buffer.rs` checks bit equality). Buffer batches combine like a binary counter
+until they hold 64 chunks, so a query visits few batches and no chunk is rebuilt more than a few
+times; batches share records through `Arc`.
+
+The buffer seals into one ordinary segment when it reaches `write_buffer` chunks or 32 MiB, on
+`Index::flush`, and before `compact`. That publish writes the in-memory tombstones and moves to
+an empty WAL generation; the old log is deleted after the rename. Opening replays the log: whole
+frames become the buffer, their dead ids join the tombstones, chunk ids continue past the
+highest logged one, and a torn or corrupt tail (CRC32) is truncated. The CLI's write commands
+and the benches flush before they exit, so batch jobs leave sealed segments. `write_buffer = 0`
+restores seal-per-write; the seal and merge tests use it.
+
+FiQA added one call at a time (`examples/profile_incremental`): 1 doc per call 44 s (0.77 ms
+per call; about 10 ms before), 10 per call 57 s to 18 s, 100 per call 8.8 s to 6.6 s. Calls of
+1,000 or more chunks seal directly as before.

@@ -156,7 +156,7 @@ fn f16_to_f32(half: u16) -> f32 {
 }
 
 /// The row as `f32` in the scale it is stored; binary mode stores int8 rows.
-fn row_values(quantization: Quantization, row: &[u8]) -> Vec<f32> {
+pub(crate) fn row_values(quantization: Quantization, row: &[u8]) -> Vec<f32> {
     match quantization {
         Quantization::B1 => dequantize(Quantization::I8, row),
         other => dequantize(other, row),
@@ -631,19 +631,8 @@ impl VectorSegment {
         vec![self.dir.join("codes.bin"), self.dir.join("vectors.bin")]
     }
 
-    /// Exact cosine distance from the query to a stored row; a zero vector is distance 1.
     fn exact_distance(&self, query: &DenseQuery, query_norm: f32, ordinal: usize) -> f32 {
-        let row = self.row(ordinal);
-        if stored_quantization(self.quantization) == Quantization::I8 {
-            let norm = self.stats()[ordinal].norm;
-            if query_norm == 0.0 || norm == 0.0 {
-                return 1.0;
-            }
-            // SAFETY: `kernels()` only returns functions this CPU supports.
-            let dot = unsafe { (kernels().dot_i8)(as_i8(&query.row), as_i8(row)) };
-            return 1.0 - dot as f32 / (query_norm * norm);
-        }
-        cosine_distance(&query.raw, &row_values(self.quantization, row))
+        exact_distance(self.quantization, query, query_norm, self.row(ordinal), self.stats()[ordinal].norm)
     }
 
     /// Stages 1 and 2: up to `budget.refine` live rows with their estimated cosine, which is
@@ -704,11 +693,7 @@ impl VectorSegment {
         // Ascending rows read the mapped vectors in file order, which the prefetch below and the
         // page cache both prefer.
         rows.sort_unstable();
-        let query_norm = if stored_quantization(self.quantization) == Quantization::I8 {
-            (as_i8(&query.row).iter().map(|v| i32::from(*v) * i32::from(*v)).sum::<i32>() as f32).sqrt()
-        } else {
-            0.0
-        };
+        let query_norm = query_norm(self.quantization, query);
         let mut hits = Vec::with_capacity(rows.len());
         for (at, row) in rows.iter().enumerate() {
             if let Some(ahead) = rows.get(at + PREFETCH_AHEAD) {
@@ -778,6 +763,40 @@ impl Budget {
             (want * REFINE_PER_HIT).max(REFINE_MIN)
         }
     }
+}
+
+/// `|row|` as `codes.bin` stores it: the norm of the dequantized values.
+pub(crate) fn row_norm(quantization: Quantization, row: &[u8]) -> f32 {
+    row_values(quantization, row).iter().map(|v| v * v).sum::<f32>().sqrt()
+}
+
+/// The int8 query's norm, the other operand of `exact_distance`; 0 for float modes.
+pub(crate) fn query_norm(quantization: Quantization, query: &DenseQuery) -> f32 {
+    if stored_quantization(quantization) == Quantization::I8 {
+        (as_i8(&query.row).iter().map(|v| i32::from(*v) * i32::from(*v)).sum::<i32>() as f32).sqrt()
+    } else {
+        0.0
+    }
+}
+
+/// Exact cosine distance from the query to a stored row with norm `norm`; a zero vector is
+/// distance 1. Int8 rows use the integer dot product against the quantized query.
+pub(crate) fn exact_distance(
+    quantization: Quantization,
+    query: &DenseQuery,
+    query_norm: f32,
+    row: &[u8],
+    norm: f32,
+) -> f32 {
+    if stored_quantization(quantization) == Quantization::I8 {
+        if query_norm == 0.0 || norm == 0.0 {
+            return 1.0;
+        }
+        // SAFETY: `kernels()` only returns functions this CPU supports.
+        let dot = unsafe { (kernels().dot_i8)(as_i8(&query.row), as_i8(row)) };
+        return 1.0 - dot as f32 / (query_norm * norm);
+    }
+    cosine_distance(&query.raw, &row_values(quantization, row))
 }
 
 /// Rows ahead of the current one whose bytes are requested early.

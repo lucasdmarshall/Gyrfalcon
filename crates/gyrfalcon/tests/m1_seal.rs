@@ -80,7 +80,7 @@ fn create_writes_epoch_1_and_empty_generation_0_files() {
     Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     let manifest = Manifest::read(&dir.path().join("manifest.json")).unwrap();
     assert_eq!(manifest.epoch, 1);
-    assert_eq!(manifest.format_version, 5);
+    assert_eq!(manifest.format_version, 6);
     assert_eq!(manifest.tombstone_generation, 0);
     assert_eq!((manifest.bm25_num_docs, manifest.bm25_num_tokens), (0, 0));
     assert_eq!(manifest.segments_per_tier, 8);
@@ -150,6 +150,7 @@ fn chunk_prefers_paragraph_breaks_and_overlaps() {
 fn index_documents_publishes_chunk_ids_and_epoch_2() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     let report = index
         .index_documents(&[Document { doc_id: "a".into(), text: "alpha beta".into(), contextual_prefix: false }])
         .unwrap();
@@ -177,6 +178,7 @@ fn index_documents_publishes_chunk_ids_and_epoch_2() {
 fn crash_before_rename_keeps_the_previous_manifest() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     index.fail_before_rename = true;
     assert!(index
         .index_documents(&[Document { doc_id: "a".into(), text: "alpha".into(), contextual_prefix: false }])
@@ -197,6 +199,7 @@ fn crash_before_rename_keeps_the_previous_manifest() {
 fn seal_splits_when_the_threshold_is_three() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     index.seal_every = 3;
     let docs: Vec<_> = (0..4).map(|i| Document::body(format!("d{i}"), format!("word {i}"))).collect();
     let report = index.index_documents(&docs).unwrap();
@@ -208,9 +211,11 @@ fn seal_splits_when_the_threshold_is_three() {
 fn chunk_ids_survive_reopen_and_are_not_reused() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     index.index_documents(&[Document::body("a", "alpha")]).unwrap();
     drop(index);
     let mut index = Index::open(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     let report = index.index_documents(&[Document::body("b", "beta")]).unwrap();
     assert_eq!(report.chunk_ids, vec![1]);
     assert_eq!(index.manifest().sealed_segments.len(), 2);

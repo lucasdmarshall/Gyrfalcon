@@ -11,6 +11,7 @@ fn unit(dimension: usize, axis: usize, sign: f32) -> Vec<f32> {
 fn collection_doc_freq_is_the_sum_and_ignores_nothing_dead() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     index.index_documents(&[Document::body("a", "rust safety")]).unwrap();
     index.index_documents(&[Document::body("b", "rust cooking")]).unwrap();
     assert_eq!(index.manifest().sealed_segments.len(), 2);
@@ -35,6 +36,7 @@ fn collection_scores_differ_from_segment_local_scores() {
     // collection statistics a common term ("shared") scores lower than a rare one.
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     let docs: Vec<_> = (0..9).map(|i| Document::body(format!("s{i}"), "shared words")).collect();
     index.index_documents(&docs).unwrap();
     index.index_documents(&[Document::body("rare", "rare words")]).unwrap();
@@ -46,6 +48,7 @@ fn collection_scores_differ_from_segment_local_scores() {
 fn ninety_dead_of_100(config: &IndexConfig) -> (tempfile::TempDir, Index) {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), config).unwrap();
+    index.write_buffer = 0;
     let mut rows = Vec::new();
     for i in 0..100 {
         let mut vector = vec![0.0; 384];
@@ -89,6 +92,7 @@ fn binary_mode_maps_vectors_bin_for_rescore() {
     config.quantization = Quantization::B1;
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &config).unwrap();
+    index.write_buffer = 0;
     let vector = unit(384, 0, 1.0);
     index.index_documents_with_vectors(&[(Document::body("a", "rust"), vector.clone())]).unwrap();
     let mapped = index.vector_search_mapped_paths();
@@ -112,6 +116,7 @@ fn binary_mode_rescore_orders_by_cosine() {
 fn int8_search_maps_codes_and_vectors() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     let vector = unit(384, 0, 1.0);
     index.index_documents_with_vectors(&[(Document::body("a", "rust"), vector.clone())]).unwrap();
     let hits = index.vector_search(&vector, 1).unwrap();
@@ -144,6 +149,7 @@ fn rrf_weights_scale_each_leg() {
 fn retrieve_prepares_the_query_once() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     let embedder = CountingEmbedder::new(384);
     index.set_embedder(Box::new(embedder.clone()));
     index.index_documents_with_vectors(&[(Document::body("a", "rust safety"), vec![1.0; 384])]).unwrap();
@@ -160,6 +166,7 @@ fn retrieve_prepares_the_query_once() {
 fn retrieve_fuses_both_legs_across_segments() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     index.index_documents(&[Document::body("a", "memory safety in rust")]).unwrap();
     index.index_documents(&[Document::body("b", "baking bread at home")]).unwrap();
     index.index_documents(&[Document::body("c", "rust borrow checker")]).unwrap();
@@ -188,6 +195,7 @@ fn empty_collection_returns_no_hits() {
 fn reopen_searches_the_sealed_engines() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
+    index.write_buffer = 0;
     index.index_documents(&[Document::body("a", "rust safety"), Document::body("b", "bread")]).unwrap();
     drop(index);
     let index = Index::open(dir.path(), &IndexConfig::test_default()).unwrap();

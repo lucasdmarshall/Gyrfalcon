@@ -123,8 +123,7 @@ impl Index {
         let exact_by_chunk: HashMap<u64, f32> = candidates
             .iter()
             .filter_map(|id| {
-                let segment = snapshot.segment_of(*id)?;
-                let stored = segment.vector.stored_vector(*id, &segment.ids)?;
+                let stored = snapshot.stored_vector(*id)?;
                 Some((*id, 1.0 - cosine_distance(&vector, &stored)))
             })
             .collect();
@@ -145,7 +144,7 @@ impl Index {
         let idf_max = prepared
             .tokens
             .iter()
-            .map(|t| bm25_idf(snapshot.manifest.bm25_num_docs, snapshot.doc_freq(&t.text)))
+            .map(|t| bm25_idf(snapshot.bm25_totals().0, snapshot.doc_freq(&t.text)))
             .fold(0.0, f32::max);
         let mut trace = QueryTrace {
             features: QueryFeatures {
