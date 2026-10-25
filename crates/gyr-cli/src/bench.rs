@@ -78,6 +78,10 @@ pub enum BenchCommand {
         rerank: bool,
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Writes each ranked list as `{dataset}-{fusion}.tsv` (query, doc, rank, score) here,
+        /// for scoring with another evaluator.
+        #[arg(long)]
+        run_dir: Option<PathBuf>,
         #[command(flatten)]
         model: ModelArgs,
     },
@@ -852,6 +856,7 @@ fn bench_beir(
     rerank: bool,
     model: &ModelArgs,
     out: Option<&Path>,
+    run_dir: Option<&Path>,
 ) -> Result<Value, Error> {
     let mut results = Vec::new();
     let mut environment = None;
@@ -901,6 +906,7 @@ fn bench_beir(
             index.fusion = fusion;
             let (mut ndcg, mut recall, mut mrr) = (0.0, 0.0, 0.0);
             let mut millis = Vec::with_capacity(queries.len());
+            let mut run = String::new();
             for (id, text) in &queries {
                 let started = Instant::now();
                 let hits = index.retrieve(text, RetrieveOptions { rerank, limit: depth })?;
@@ -911,10 +917,17 @@ fn bench_beir(
                         .into_iter()
                         .filter(|doc| doc != id)
                         .collect();
+                for (rank, doc) in ranked.iter().enumerate() {
+                    run.push_str(&format!("{id}\t{doc}\t{}\t{}\n", rank + 1, ranked.len() - rank));
+                }
                 let judged = &qrels[id];
                 ndcg += gyrfalcon::bench::ndcg_at(&ranked, judged, 10);
                 recall += gyrfalcon::bench::recall_at(&ranked, judged, 100);
                 mrr += gyrfalcon::bench::mrr_at(&ranked, judged, 10);
+            }
+            if let Some(run_dir) = run_dir {
+                std::fs::create_dir_all(run_dir)?;
+                std::fs::write(run_dir.join(format!("{name}-{}.tsv", spec.replace(':', "_"))), run)?;
             }
             let n = queries.len().max(1) as f64;
             let latency = LatencyColumn::from_samples(1, millis, 0.0, &[]);
@@ -1195,8 +1208,10 @@ pub fn run(command: BenchCommand) -> Result<(), Error> {
         BenchCommand::Ingest { files, chunks_per_file, out, model } => {
             emit(&bench_ingest(files, chunks_per_file, &model)?, out.as_deref())
         }
-        BenchCommand::Beir { dataset, split, fusions, depth, rerank, out, model } => {
-            emit(&bench_beir(&dataset, &split, &fusions, depth, rerank, &model, out.as_deref())?, out.as_deref())
+        BenchCommand::Beir { dataset, split, fusions, depth, rerank, out, run_dir, model } => {
+            let report =
+                bench_beir(&dataset, &split, &fusions, depth, rerank, &model, out.as_deref(), run_dir.as_deref())?;
+            emit(&report, out.as_deref())
         }
         BenchCommand::Trace { dataset, orb_fixture, out_dir, depth, rerank_dir, rerank_k, rerank_tokens, model } => {
             let reranker = match &rerank_dir {
