@@ -33,12 +33,13 @@ datasets with the same embedder, potion-retrieval-32M, on a 4-vCPU cloud VM
 | nDCG@10, NFCorpus | **0.341** | 0.308 | 0.254 | 0.327 |
 | nDCG@10, ArguAna | **0.473** | 0.473 | 0.387 | 0.441 |
 | nDCG@10, FiQA | **0.269** | 0.242 | 0.188 | 0.239 |
-| index FiQA (57k docs), s | **2.65** | 32.8 | 20.6 | 17.7 |
-| query p50, FiQA, ms | **2.95** | 1,436 | 2,398 | 2,226 |
-| peak RSS, FiQA, MB | **520** | 2,116 | 2,791 | 2,386 |
+| index FiQA (57k docs), s | **2.00** | 32.8 | 20.6 | 17.7 |
+| query p50, FiQA, ms | **2.68** | 1,436 | 2,398 | 2,226 |
+| peak RSS, FiQA, MB | **414** | 2,116 | 2,791 | 2,386 |
 
-On one core the gap holds: SciFact indexes in 1.1 s against 7–19 s, and queries take 2 ms
-against 110–180 ms (`bench/results/2026-10-25-cloud-1core-h2h`).
+On one core the gap holds: SciFact indexes in 0.9 s against 7–19 s, and queries take 2 ms
+against 110–180 ms (`bench/results/2026-10-25-cloud-1core-h2h`; Gyrfalcon's rows refreshed in
+`bench/results/2026-10-26-lite-refresh`).
 
 ## Tiers
 
