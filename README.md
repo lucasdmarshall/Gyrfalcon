@@ -37,6 +37,11 @@ datasets with the same embedder, potion-retrieval-32M, on a 4-vCPU cloud VM
 | query p50, FiQA, ms | **2.68** | 1,436 | 2,398 | 2,226 |
 | peak RSS, FiQA, MB | **414** | 2,116 | 2,791 | 2,386 |
 
+With the full tier against the same frameworks on bge-small-en-v1.5
+(`bench/results/2026-10-26-cloud-4core-bge-h2h`), SciFact scores 0.743 nDCG@10 against
+0.639–0.727, indexes in 193 s against 636–1,251 s, answers in 9 ms against 137–167 ms, and
+peaks at 499 MB against 1.45–1.52 GB.
+
 On one core the gap holds: SciFact indexes in 0.9 s against 7–19 s, and queries take 2 ms
 against 110–180 ms (`bench/results/2026-10-25-cloud-1core-h2h`; Gyrfalcon's rows refreshed in
 `bench/results/2026-10-26-lite-refresh`).

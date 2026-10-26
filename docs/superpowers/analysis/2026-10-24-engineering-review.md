@@ -163,3 +163,27 @@ Lexical query, item 2: the owned index scores exhaustively today. Its skip entri
 carry the per-block max tf and min norm that block-max pruning needs, so WAND or MaxScore is a
 reader change, not a format change.
 
+
+A document-at-a-time block-max MaxScore was built and measured on 2026-10-26: identical
+results, but 3-11x slower than exhaustive term-at-a-time scoring at BEIR sizes (spec, "Block-max
+MaxScore, tried and reverted"). Pruning stays open for collections of a million chunks, as a
+windowed term-at-a-time design.
+
+Progress on 2026-10-26 (spec sections of the same date hold the numbers):
+
+- Item 6, parsing: done. PDFium measured best of ten extractors on 100 arXiv papers;
+  `gyrfalcon-ingest` adds the layout layer and an HTML reader; `gyr index` and the Python
+  package take files and directories.
+- Item 4, quality: the full tier's fusion weight re-chosen with analyzer v2 (0.65; +0.014 to
+  +0.051 nDCG@10 on test). The chunker cuts in a window's back half first.
+- Item 5, scale and robustness: memory. A mapped embeddings table and compact chunk records:
+  `gyr query` 293 MB to 27 MB and 324 ms to 33 ms; a 5,000-chunk ingest's heap 277 MB to 75 MB.
+  Full-tier ingest batches by length under a byte budget: SciFact 482 s and 2.1 GB to 195 s
+  and 0.5 GB.
+- Item 5, framework features: Python bindings (`gyrfalcon` package, wheels workflow) and
+  metadata filters (format version 7) are in; several collections per process work through the
+  Python package.
+
+Still open: pruned lexical search at scale, merges that copy postings instead of re-analyzing
+text (merges hold each merged chunk's record, about twice its text), multi-process PDF
+extraction (PDFium serializes on one core), and a stronger static model for the lite tier.

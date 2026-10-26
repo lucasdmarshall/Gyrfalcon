@@ -29,6 +29,9 @@ enum Command {
     Index {
         dir: PathBuf,
         files: Vec<PathBuf>,
+        /// Metadata every document of this run carries, `key=value`; repeatable.
+        #[arg(long = "metadata", value_name = "KEY=VALUE")]
+        metadata: Vec<String>,
         #[command(flatten)]
         model: ModelArgs,
     },
@@ -245,7 +248,10 @@ impl ModelArgs {
                 let model_dir = model_dir.as_ref().ok_or_else(|| {
                     Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the static embedder".into())
                 })?;
-                Box::new(StaticEmbedder::from_dir(model_dir, config.model_id.clone())?)
+                // A --dimension below the table's width truncates a Matryoshka model.
+                Box::new(
+                    StaticEmbedder::from_dir(model_dir, config.model_id.clone())?.truncated(config.dimension as usize),
+                )
             }
             EmbedderKind::Http => {
                 let url = self
@@ -288,6 +294,14 @@ impl ModelArgs {
     }
 }
 
+/// `key=value` as a pair.
+fn key_value(pair: &str, flag: &str) -> Result<(String, String), Error> {
+    let (key, value) = pair.split_once('=').ok_or_else(|| {
+        Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{flag} {pair}: use KEY=VALUE")))
+    })?;
+    Ok((key.to_string(), value.to_string()))
+}
+
 /// The files to index: each named file, and the supported files under each named directory
 /// (hidden entries skipped), in path order.
 fn input_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
@@ -320,7 +334,8 @@ fn input_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
 
 fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
-        Command::Index { dir, files, model } => {
+        Command::Index { dir, files, metadata, model } => {
+            let metadata = metadata.iter().map(|pair| key_value(pair, "--metadata")).collect::<Result<Vec<_>, _>>()?;
             let inputs = input_files(&files)?;
             let pdf = |p: &PathBuf| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
             if inputs.iter().any(pdf) {
@@ -333,7 +348,10 @@ fn run(cli: Cli) -> Result<(), Error> {
             if files.is_empty() {
                 let mut text = String::new();
                 std::io::stdin().read_to_string(&mut text)?;
-                chunks += index.index_documents(&[Document::body("stdin", text)])?.chunk_ids.len();
+                chunks += index
+                    .index_documents(&[Document::body("stdin", text).with_metadata(metadata.clone())])?
+                    .chunk_ids
+                    .len();
                 documents += 1;
             }
             for path in inputs {
@@ -345,7 +363,7 @@ fn run(cli: Cli) -> Result<(), Error> {
                         continue;
                     }
                 };
-                let doc = Document::body(path.to_string_lossy(), text);
+                let doc = Document::body(path.to_string_lossy(), text).with_metadata(metadata.clone());
                 chunks += index.index_documents(std::slice::from_ref(&doc))?.chunk_ids.len();
                 documents += 1;
             }
@@ -383,15 +401,10 @@ fn run(cli: Cli) -> Result<(), Error> {
             } else {
                 let mut clauses: Vec<(String, Vec<String>)> = Vec::new();
                 for filter in &filters {
-                    let (key, value) = filter.split_once('=').ok_or_else(|| {
-                        Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!("--filter {filter}: use KEY=VALUE"),
-                        ))
-                    })?;
-                    match clauses.iter_mut().find(|(k, _)| k == key) {
-                        Some((_, values)) => values.push(value.to_string()),
-                        None => clauses.push((key.to_string(), vec![value.to_string()])),
+                    let (key, value) = key_value(filter, "--filter")?;
+                    match clauses.iter_mut().find(|(k, _)| *k == key) {
+                        Some((_, values)) => values.push(value),
+                        None => clauses.push((key, vec![value])),
                     }
                 }
                 let filter = clauses.into_iter().fold(Filter::new(), |f, (key, values)| f.any(key, values));

@@ -334,7 +334,17 @@ fn pid_alive(pid: u32) -> bool {
             .map(|status| status.success())
             .unwrap_or(true)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        // `tasklist` lists the process when it exists; anything else, including a failure to
+        // run it, keeps the lock.
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\"")))
+            .unwrap_or(true)
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         true
     }

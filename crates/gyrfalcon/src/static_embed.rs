@@ -50,8 +50,11 @@ pub struct StaticEmbedder {
     fast: Option<crate::wordpiece::FastWordPiece>,
     /// Characters kept per text: `STATIC_MAX_TOKENS * median vocabulary token length`.
     max_chars: usize,
-    /// Row-major `[vocab, dimension]`.
+    /// Row-major `[vocab, width]`.
     table: Table,
+    width: usize,
+    /// Leading components of each row that are pooled: `width`, or fewer for a Matryoshka
+    /// model truncated by `truncated`.
     dimension: usize,
     normalize: bool,
     unk_id: Option<u32>,
@@ -113,6 +116,14 @@ fn f16_to_f32(half: u16) -> f32 {
 }
 
 impl StaticEmbedder {
+    /// This embedder pooling only the first `dimension` components of each row, for a model
+    /// trained with Matryoshka loss (its leading components carry the most). A larger
+    /// `dimension` changes nothing.
+    pub fn truncated(mut self, dimension: usize) -> StaticEmbedder {
+        self.dimension = self.dimension.min(dimension.max(1));
+        self
+    }
+
     /// The output dimension, read from the safetensors header without loading the table.
     pub fn read_dimension(dir: &Path) -> Result<u32> {
         use std::io::Read;
@@ -186,6 +197,7 @@ impl StaticEmbedder {
             fast,
             max_chars: STATIC_MAX_TOKENS * median.max(1),
             table,
+            width: shape[1],
             dimension: shape[1],
             normalize,
             unk_id,
@@ -232,7 +244,7 @@ impl StaticEmbedder {
         let mut out = vec![0f32; self.dimension];
         let mut count = 0usize;
         for id in ids.iter().filter(|id| Some(**id) != self.unk_id) {
-            let start = *id as usize * self.dimension;
+            let start = *id as usize * self.width;
             let Some(row) = table.get(start..start + self.dimension) else { continue };
             for (o, v) in out.iter_mut().zip(row) {
                 *o += v;
