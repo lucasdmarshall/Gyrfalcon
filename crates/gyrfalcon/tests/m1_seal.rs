@@ -139,6 +139,13 @@ fn chunk_prefers_paragraph_breaks_and_overlaps() {
     assert_eq!(spans[0].end, 1502);
     assert_eq!(spans[1].start, 1502 - 256);
     assert_eq!(spans[1].end, text.len());
+    // A blank line early in the window loses to a sentence end in its back half.
+    let text = format!("Heading\n\n{}. {}", "c".repeat(1800), "d".repeat(1000));
+    let spans = gyrfalcon::chunk(&text);
+    assert_eq!(spans[0].end, "Heading\n\n".len() + 1802);
+    // With no break in the back half the early one still wins over a mid-word cut.
+    let text = format!("Heading\n\n{}", "e".repeat(3000));
+    assert_eq!(gyrfalcon::chunk(&text)[0].end, "Heading\n\n".len());
     let myanmar = "မြန်မာစာ။".repeat(200);
     for span in gyrfalcon::chunk(&myanmar) {
         assert!(span.end - span.start <= 2048);

@@ -15,9 +15,11 @@ pub fn chunk(text: &str) -> Vec<Span> {
 }
 
 /// Walks byte windows of `window`. A cut prefers a blank line, then a newline, then `. ` or
-/// `။`, else the last char boundary inside the window. The next window starts `overlap`
-/// bytes before the cut, on a char boundary. Every byte is covered and no span splits a
-/// UTF-8 code point.
+/// `။`, first in the window's back half and then anywhere, else the last char boundary inside
+/// the window. A break early in the window (a heading, a short paragraph) would otherwise cut
+/// off a fragment and start the next window on most of this one's text. The next window
+/// starts `overlap` bytes before the cut, on a char boundary. Every byte is covered and no
+/// span splits a UTF-8 code point.
 pub fn chunk_with(text: &str, window: usize, overlap: usize) -> Vec<Span> {
     let mut spans = Vec::new();
     let mut start = 0;
@@ -45,6 +47,11 @@ pub fn chunk_with(text: &str, window: usize, overlap: usize) -> Vec<Span> {
 }
 
 fn preferred_cut(window: &str, min_offset: usize) -> Option<usize> {
+    cut_after(window, min_offset.max(window.len() / 2)).or_else(|| cut_after(window, min_offset))
+}
+
+/// The last break of the strongest kind that lies past `min_offset`.
+fn cut_after(window: &str, min_offset: usize) -> Option<usize> {
     let after = |cut: Option<usize>| cut.filter(|at| *at > min_offset && *at > 0);
     if let Some(cut) = after(window.rfind("\n\n").map(|at| at + 2)) {
         return Some(cut);
