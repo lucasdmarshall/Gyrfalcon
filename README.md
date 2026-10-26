@@ -93,4 +93,4 @@ scripts/fetch-models.sh                       # models for the CLI and benches
 cd crates/gyrfalcon-py && maturin develop --release && pytest tests   # the Python package
 ```
 
-Licensed under MIT or Apache-2.0.
+Licensed under the [Apache License 2.0](LICENSE).

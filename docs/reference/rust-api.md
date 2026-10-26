@@ -76,10 +76,9 @@ before embedding. It is off by default, costs one LLM call per chunk, and needs 
 | `Filter::new().eq(k, v).any(k, [v1, v2])` | Every clause must hold; `any` matches any listed value |
 | `collection_doc_freq(&str) -> u64` | How many chunks contain a word, after analysis |
 
-> [!IMPORTANT]
-> `RetrieveOptions::default()` sets `rerank: true`. With no reranker attached the stage keeps
-> the fused order but sets every score to 0. Pass `rerank: false` unless you call
-> `set_reranker`.
+`RetrieveOptions::default()` is `{ rerank: false, limit: 10 }`. Rerank needs a reranker
+attached with `set_reranker`; without one, `rerank: true` returns the fused hits unchanged.
+`AnswerOptions` behaves the same way.
 
 ## Fusion
 

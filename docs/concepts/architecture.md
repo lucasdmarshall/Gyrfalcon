@@ -144,8 +144,9 @@ flowchart LR
 - **Snapshots.** A query takes the current published state (an epoch) and keeps it until it
   returns. A merge that publishes meanwhile does not disturb it.
 - **Deferred deletes.** Files a merge retires are deleted only after every query that may read
-  them has finished. On Windows, where a mapped file cannot be deleted, a failed delete stays
-  queued and is retried.
+  them has finished, on a background thread and outside every lock queries take, so no query
+  waits on the file system. On Windows, where a mapped file cannot be deleted, a failed delete
+  stays queued and is retried on the next write.
 - **Tombstones.** Deletes and updates never rewrite a sealed segment. They add chunk ids to a
   collection-wide tombstone set; the ids leave the files when a merge rewrites the segment.
   BM25 statistics keep counting dead chunks until then, as Lucene does, so no query has to

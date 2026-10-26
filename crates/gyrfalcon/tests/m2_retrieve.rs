@@ -178,6 +178,19 @@ fn retrieve_fuses_both_legs_across_segments() {
 }
 
 #[test]
+fn rerank_without_a_reranker_keeps_the_fused_scores() {
+    let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
+    index
+        .index_documents(&[Document::body("a", "memory safety in rust"), Document::body("b", "rust borrow checker")])
+        .unwrap();
+    assert!(!RetrieveOptions::default().rerank);
+    let off = index.retrieve("rust safety", RetrieveOptions { rerank: false, limit: 2 }).unwrap();
+    let on = index.retrieve("rust safety", RetrieveOptions { rerank: true, limit: 2 }).unwrap();
+    assert_eq!(on.hits, off.hits);
+    assert!(off.hits[0].score > 0.0);
+}
+
+#[test]
 fn empty_query_is_rejected_before_either_leg() {
     let index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
     let err = index.retrieve("  \n ", RetrieveOptions { rerank: false, limit: 5 }).unwrap_err();

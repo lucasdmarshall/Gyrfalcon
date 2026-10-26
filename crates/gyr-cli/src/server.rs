@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use gyrfalcon::{
-    AnswerEvent, AnswerOptions, Document, Error, Filter, Hit, Index, IndexConfig, Quantization, RetrieveOptions,
+    AnswerEvent, AnswerOptions, Document, Error, Filter, Hit, Index, IndexConfig, IndexReport, Quantization,
+    RetrieveOptions,
 };
 use serde_json::{json, Value};
 
@@ -151,6 +152,21 @@ fn clauses(value: Option<&Value>, what: &str) -> Result<Clauses, (u16, Value)> {
         .collect()
 }
 
+/// A document from its JSON object: `text`, and optionally `metadata` and `contextual_prefix`.
+fn document(doc_id: &str, doc: &Value) -> Result<Document, (u16, Value)> {
+    let text = doc.get("text").and_then(Value::as_str).ok_or_else(|| bad_request("text is required"))?;
+    let metadata = clauses(doc.get("metadata"), "metadata")?
+        .into_iter()
+        .flat_map(|(key, values)| values.into_iter().map(move |value| (key.clone(), value)));
+    let mut document = Document::body(doc_id, text).with_metadata(metadata);
+    document.contextual_prefix = doc.get("contextual_prefix").and_then(Value::as_bool).unwrap_or(false);
+    Ok(document)
+}
+
+fn report_json(report: &IndexReport) -> Value {
+    json!({ "chunk_ids": report.chunk_ids, "sealed": report.sealed, "epoch": report.epoch, "warning": report.warning })
+}
+
 fn bad_request(message: &str) -> (u16, Value) {
     (400, json!({ "error": "bad_request", "message": message }))
 }
@@ -223,19 +239,16 @@ fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Valu
             for doc in documents {
                 let doc_id =
                     doc.get("doc_id").and_then(Value::as_str).ok_or_else(|| bad_request("doc_id is required"))?;
-                let text = doc.get("text").and_then(Value::as_str).ok_or_else(|| bad_request("text is required"))?;
-                let metadata = clauses(doc.get("metadata"), "metadata")?
-                    .into_iter()
-                    .flat_map(|(key, values)| values.into_iter().map(move |value| (key.clone(), value)));
-                let mut document = Document::body(doc_id, text).with_metadata(metadata);
-                document.contextual_prefix = doc.get("contextual_prefix").and_then(Value::as_bool).unwrap_or(false);
-                docs.push(document);
+                docs.push(document(doc_id, doc)?);
             }
             let mut index = app.index.write().unwrap_or_else(|p| p.into_inner());
-            let report = library(index.index_documents(&docs))?;
-            Ok(
-                json!({ "chunk_ids": report.chunk_ids, "sealed": report.sealed, "epoch": report.epoch, "warning": report.warning }),
-            )
+            Ok(report_json(&library(index.index_documents(&docs))?))
+        }
+        ("PUT", path) if path.starts_with("/v1/documents/") => {
+            gate(app, body)?;
+            let document = document(&percent_decode(&path["/v1/documents/".len()..]), body)?;
+            let mut index = app.index.write().unwrap_or_else(|p| p.into_inner());
+            Ok(report_json(&library(index.update_document(document))?))
         }
         ("DELETE", path) if path.starts_with("/v1/documents/") => {
             let doc_id = percent_decode(&path["/v1/documents/".len()..]);
@@ -247,7 +260,7 @@ fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Valu
             gate(app, body)?;
             let query = body.get("query").and_then(Value::as_str).ok_or_else(|| bad_request("query is required"))?;
             let opts = RetrieveOptions {
-                rerank: body.get("rerank").and_then(Value::as_bool).unwrap_or(true),
+                rerank: body.get("rerank").and_then(Value::as_bool).unwrap_or(false),
                 limit: body.get("limit").and_then(Value::as_u64).unwrap_or(10) as usize,
             };
             let include_prefix = body.get("include_prefix").and_then(Value::as_bool).unwrap_or(false);
@@ -273,7 +286,7 @@ fn answer(app: &App, stream: &mut TcpStream, body: &Value) -> std::io::Result<()
         gate(app, body)?;
         let query = body.get("query").and_then(Value::as_str).ok_or_else(|| bad_request("query is required"))?;
         let opts = AnswerOptions {
-            rerank: body.get("rerank").and_then(Value::as_bool).unwrap_or(true),
+            rerank: body.get("rerank").and_then(Value::as_bool).unwrap_or(false),
             ..AnswerOptions::default()
         };
         let index = app.index.read().unwrap_or_else(|p| p.into_inner());

@@ -168,6 +168,25 @@ fn http_routes_call_the_library() {
 }
 
 #[test]
+fn http_put_replaces_a_document_in_one_write() {
+    let server = TestServer::spawn();
+    let body = r#"{"documents":[{"doc_id":"guide","text":"install with pip","metadata":{"v":"1"}}]}"#;
+    assert_eq!(server.post("/v1/documents", body).status, 200);
+    let replaced = server.put("/v1/documents/guide", r#"{"text":"install with cargo","metadata":{"v":"2"}}"#);
+    assert_eq!(replaced.status, 200, "{}", replaced.body);
+    assert_eq!(replaced.json["chunk_ids"], serde_json::json!([1]));
+    let hits = server.post("/v1/retrieve", r#"{"query":"install","limit":10}"#);
+    assert_eq!(hits.json["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(hits.json["hits"][0]["body"], "install with cargo");
+    assert_eq!(hits.json["hits"][0]["metadata"], serde_json::json!({"v":"2"}));
+    assert_eq!(server.put("/v1/documents/guide", r#"{"metadata":{}}"#).status, 400);
+    let inserted = server.put("/v1/documents/new%20doc", r#"{"text":"fresh"}"#);
+    assert_eq!(inserted.status, 200);
+    let found = server.post("/v1/retrieve", r#"{"query":"fresh","limit":1}"#);
+    assert_eq!(found.json["hits"][0]["doc_id"], "new doc");
+}
+
+#[test]
 fn http_metadata_and_filters() {
     let server = TestServer::spawn();
     let body = r#"{"documents":[

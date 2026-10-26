@@ -101,6 +101,10 @@ impl TestServer {
         http(&self.addr, "POST", path, body)
     }
 
+    pub fn put(&self, path: &str, body: &str) -> HttpResponse {
+        http(&self.addr, "PUT", path, body)
+    }
+
     pub fn delete(&self, path: &str) -> HttpResponse {
         http(&self.addr, "DELETE", path, "")
     }

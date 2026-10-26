@@ -39,10 +39,10 @@ cargo test --release
 | Suite | Tests | Covers |
 |---|---|---|
 | `m1_seal` | 16 | Creating and sealing; the identity check on open, which must reject a mismatch before mapping any file; crash before the manifest rename |
-| `m2_retrieve` | 17 | The query path: one `prepare` per query, collection-wide BM25 statistics, 90 of 100 chunks deleted still returning 10 live hits from both legs |
+| `m2_retrieve` | 18 | The query path: one `prepare` per query, collection-wide BM25 statistics, 90 of 100 chunks deleted still returning 10 live hits from both legs |
 | `m3_ort` | 11 | Embedders and rerankers: width checks, missing files, rerank off never calling the model, the HTTP embedder |
 | `m4_merge` | 14 | Tiered merges, the dead-ratio rewrite, stable chunk ids, a delete during a merge, updates that crash, reader epochs and the retrying reaper |
-| `m5_serve` | 13 | The HTTP server and `answer`: prompts byte for byte, streamed tokens, an LLM failure after the hits |
+| `m5_serve` | 14 | The HTTP server and `answer`: every route, atomic `PUT`, prompts byte for byte, streamed tokens, an LLM failure after the hits |
 | `m6_bench` | 10 | The benchmark harness: report shapes, merge waiting, metric deduplication |
 | `p1_planner` | 6 | Trace and replay: replay equals the live ranking, the bootstrap, the hash split |
 | `w1_buffer` | 7 | The write-ahead log and buffer: durability across reopen, torn tails, bit-identical scores before and after sealing |

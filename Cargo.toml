@@ -6,7 +6,7 @@ default-members = ["crates/gyrfalcon", "crates/gyrfalcon-ingest", "crates/gyr-cl
 
 [workspace.package]
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 
 # USearch and Tantivy are unusable unoptimized; tests build 100,000-chunk segments.
 [profile.dev.package."*"]

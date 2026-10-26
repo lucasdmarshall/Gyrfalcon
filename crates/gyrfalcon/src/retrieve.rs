@@ -8,7 +8,7 @@ use crate::fuse::{max_fusion, rrf_weighted, score_fusion, Fusion};
 use crate::index::{Index, Snapshot};
 use crate::lexical::{CollectionStats, ScoredId};
 use crate::prepare::{prepare, PreparedText, Token};
-use crate::rerank::{NoopReranker, Reranker, RERANK_K};
+use crate::rerank::RERANK_K;
 use crate::store::{Excluded, Filtered, TermMap};
 use crate::vector::{Budget, DenseQuery, FallbackStep};
 
@@ -17,13 +17,15 @@ pub const LEG_LIMIT: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetrieveOptions {
+    /// Rerank the fused top `RERANK_K` with the attached reranker. Off by default; without a
+    /// reranker it changes nothing.
     pub rerank: bool,
     pub limit: usize,
 }
 
 impl Default for RetrieveOptions {
     fn default() -> Self {
-        RetrieveOptions { rerank: true, limit: 10 }
+        RetrieveOptions { rerank: false, limit: 10 }
     }
 }
 
@@ -37,7 +39,7 @@ pub struct Hit {
     pub metadata: Vec<(String, String)>,
     pub byte_start: u64,
     pub byte_end: u64,
-    /// RRF score, or the reranker score when rerank ran.
+    /// The fused score, or the reranker score when rerank ran.
     pub score: f32,
 }
 
@@ -232,9 +234,10 @@ impl Index {
         };
         let query_vector = dense.query.clone().unwrap_or_default();
         let fused = fuse(&query_vector, &dense.ids, &dense.distances);
-        let reranker: &dyn Reranker = if opts.rerank { self.reranker.as_ref() } else { &NoopReranker };
+        // Rerank runs only with a reranker attached; without one the fused scores stand.
+        let reranker = self.reranker.as_deref().filter(|_| opts.rerank);
         let mut hits = Vec::new();
-        if opts.rerank {
+        if let Some(reranker) = reranker {
             let head = fused.len().min(RERANK_K.max(opts.limit));
             for (id, score) in &fused[..head] {
                 if let Some(hit) = hit_for(snapshot, *id, *score)? {

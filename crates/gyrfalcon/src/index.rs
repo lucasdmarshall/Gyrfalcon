@@ -12,7 +12,7 @@ use crate::epoch::{ReaderGuard, Reaper};
 use crate::error::{mismatch, Error, IncompatibleField, Result};
 use crate::manifest::{check_compatible, IndexConfig, Manifest};
 
-use crate::rerank::{NoopReranker, Reranker};
+use crate::rerank::Reranker;
 use crate::segment::{self, ChunkRecord, Segment};
 use crate::store::{self, Tombstones};
 use crate::vector::quantize;
@@ -217,10 +217,10 @@ impl Shared {
         ReaderGuard { shared: self.clone(), snapshot: state.clone() }
     }
 
-    /// Runs the reaper against the current manifest.
+    /// Deletes the retired directories no reader needs, on this thread.
     pub fn reap(&self) {
         let current = self.snapshot().manifest.sealed_segments.clone();
-        self.reaper().poll_default(&current);
+        crate::epoch::reap(&self.reaper, &current);
     }
 
     /// Queues the directories of `removed` segments under `retired_at`.
@@ -384,7 +384,8 @@ impl Drop for WriterLock {
 pub struct Index {
     pub(crate) shared: Arc<Shared>,
     pub(crate) embedder: Arc<dyn Embedder>,
-    pub(crate) reranker: Arc<dyn Reranker>,
+    /// The cross-encoder `rerank` runs; none until `set_reranker`.
+    pub(crate) reranker: Option<Arc<dyn Reranker>>,
     pub(crate) chat: Option<crate::answer::ChatConfig>,
     /// Test hook: fail after the segment is fsynced and before the manifest rename.
     pub fail_before_rename: bool,
@@ -518,7 +519,7 @@ impl Index {
         Ok(Index {
             shared,
             embedder,
-            reranker: Arc::new(NoopReranker),
+            reranker: None,
             chat: None,
             fail_before_rename: false,
             seal_every: SEAL_EVERY,
@@ -575,7 +576,7 @@ impl Index {
     }
 
     pub fn set_reranker(&mut self, reranker: Box<dyn Reranker>) {
-        self.reranker = Arc::from(reranker);
+        self.reranker = Some(Arc::from(reranker));
     }
 
     /// Texts a recording embedder has received.

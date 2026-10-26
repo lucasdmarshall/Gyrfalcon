@@ -113,6 +113,7 @@ it to a network.
 |---|---|---|
 | `GET` | `/health` | `{"status": "ok"}` |
 | `POST` | `/v1/documents` | Index documents |
+| `PUT` | `/v1/documents/{doc_id}` | Replace a document atomically, or insert it (`doc_id` percent-encoded) |
 | `DELETE` | `/v1/documents/{doc_id}` | Delete a document (`doc_id` percent-encoded) |
 | `POST` | `/v1/retrieve` | Search |
 | `POST` | `/v1/answer` | Search and stream an answer (server-sent events) |
@@ -136,8 +137,18 @@ it to a network.
 
 Response: `{"chunk_ids": [0], "sealed": [], "epoch": 1, "warning": null}`.
 
-Posting an existing `doc_id` adds chunks beside the old ones. The HTTP API has no update
-endpoint; to replace a document, `DELETE` it and post it again (two steps, not atomic).
+Posting an existing `doc_id` adds chunks beside the old ones. To replace a document, use `PUT`.
+
+### `PUT /v1/documents/{doc_id}`
+
+```json
+{"text": "The gyrfalcon is the largest of all falcons.", "metadata": {"topic": "birds"}}
+```
+
+Replaces every chunk and the metadata of `doc_id` in one write: a concurrent search sees the old
+version or the new one, never both. An unknown `doc_id` is inserted. The body takes `text`
+(required), `metadata`, and `contextual_prefix` as in `POST /v1/documents`, and the response has
+the same shape.
 
 ### `POST /v1/retrieve`
 
@@ -149,7 +160,7 @@ endpoint; to replace a document, `DELETE` it and post it again (two steps, not a
 |---|---|---|
 | `query` | required | The query text |
 | `limit` | `10` | Hits to return |
-| `rerank` | `true` | Rerank with the server's cross-encoder. Without `--reranker-dir` every score becomes 0; send `false` |
+| `rerank` | `false` | Rerank the top 32 with the server's cross-encoder (`--reranker-dir`); without one it changes nothing |
 | `filter` | none | Keys to a value or an array of values, as in Python |
 | `include_prefix` | `false` | Include each hit's contextual prefix |
 
@@ -172,7 +183,8 @@ Response:
 
 ### `POST /v1/answer`
 
-Request: `{"query": "...", "rerank": false}`. The response is `text/event-stream`:
+Request: `{"query": "..."}`, with optional `rerank` (default `false`) and `include_prefix`. The
+response is `text/event-stream`:
 
 | Event | Data |
 |---|---|

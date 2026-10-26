@@ -104,10 +104,8 @@ the owl is excluded even though it matches best.
 | `flush` | Seals the write buffer into a segment. Not needed for durability. |
 | `wait_until_merge_idle` | Blocks until the background merger has nothing left to do. |
 
-> [!IMPORTANT]
-> `RetrieveOptions::default()` has `rerank: true`. With no reranker attached, the rerank stage
-> keeps the fused order but replaces every score with 0. Set `rerank: false` unless you attach
-> a cross-encoder with `Index::set_reranker`.
+`rerank: true` reorders the top 32 with a cross-encoder attached through `Index::set_reranker`.
+It is off by default, and without a reranker attached it changes nothing.
 
 ## Errors
 

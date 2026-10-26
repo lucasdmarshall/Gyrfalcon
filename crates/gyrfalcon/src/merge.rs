@@ -327,8 +327,10 @@ impl Index {
         self.shared.reaper().retired_dirs()
     }
 
-    /// Runs the reaper now. Applies `deleter_fail_times` first.
+    /// Runs the reaper now, after any delete a reader's release started in the background.
+    /// Applies `deleter_fail_times` first.
     pub fn reap_now(&mut self) {
+        crate::epoch::join_background(&self.shared.reaper);
         if self.deleter_fail_times > 0 {
             self.shared.reaper().deleter.fail_times = std::mem::take(&mut self.deleter_fail_times);
         }

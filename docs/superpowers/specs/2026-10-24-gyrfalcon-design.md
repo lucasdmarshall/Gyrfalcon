@@ -906,3 +906,26 @@ every rejected idea in `bench/results/2026-10-26-quality-sweep/`.
 
 Lite tuning mean 0.4480 to 0.4524, held-out mean 0.4922 to 0.4993; Touché is the one set that
 fell (0.328 to 0.318, not significant). Latency and index time are unchanged.
+
+### Rerank off by default, atomic HTTP update, deletes off the query path, Apache-2.0 (2026-10-26)
+
+- `RetrieveOptions::default()`, `AnswerOptions::default()`, and the HTTP `rerank` field now
+  default to `false`. A rerank request runs only when a reranker is attached
+  (`Index::set_reranker`, `gyr --reranker-dir`); without one the fused hits and scores are
+  returned unchanged. Before, a default request ran `NoopReranker`, which kept the order but set
+  every score to 0. `NoopReranker` remains for callers that want the stage explicitly. No
+  benchmark changes: every bench and the Python package already passed `rerank: false`.
+- `PUT /v1/documents/{doc_id}` calls `update_document`: the new chunks and the old chunks'
+  tombstones publish in one WAL frame or one rename, as from the library. Before, HTTP clients
+  could only delete and re-post, which a concurrent search could observe half done.
+- Retired segment directories are deleted off the query path. A reader's release used to run
+  the reaper inline: the first query to finish after a merge deleted the merged-away directories
+  (hundreds of MB on large collections) on its own thread, holding the reaper lock, while
+  `acquire` waited for that lock with the state lock held. On TREC-COVID and Touché-2020 that
+  query took 80 to 400 ms and set the p99 of those 50-query sets. Now a release only schedules a
+  background delete when a directory becomes deletable, and every delete runs outside the reaper
+  lock; `reap_now` waits for the background delete before its own pass, so `close` and the tests
+  stay deterministic. A delete that failed (a Windows sharing violation) is retried on the next
+  publish or `reap_now` rather than on every release. Lite p99, same index and queries:
+  TREC-COVID 84 to 7 ms, Touché-2020 237 to 10 ms; p50 and nDCG unchanged.
+- The project is licensed under Apache-2.0 alone (`LICENSE`, workspace and package metadata).

@@ -108,8 +108,8 @@ quality.
 
 ## License
 
-Gyrfalcon is dual-licensed under MIT or Apache-2.0, at your option. By contributing you agree
-that your contribution is licensed the same way.
+Gyrfalcon is licensed under the [Apache License 2.0](../../LICENSE). By contributing you agree
+that your contribution is licensed under the same terms, as section 5 of the license states.
 
 ---
 

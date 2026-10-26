@@ -26,6 +26,7 @@ pub struct ChatConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnswerOptions {
+    /// As `RetrieveOptions::rerank`.
     pub rerank: bool,
     /// Bodies placed in the prompt.
     pub context_k: usize,
@@ -35,7 +36,7 @@ pub struct AnswerOptions {
 
 impl Default for AnswerOptions {
     fn default() -> Self {
-        AnswerOptions { rerank: true, context_k: CONTEXT_K, chat: None }
+        AnswerOptions { rerank: false, context_k: CONTEXT_K, chat: None }
     }
 }
 

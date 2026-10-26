@@ -8,8 +8,9 @@ version = "0.1.0"
 description = "Fast hybrid retrieval for RAG: BM25 and dense search in one Rust engine, quick even on small CPUs."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT OR Apache-2.0" }
+license = { text = "Apache-2.0" }
 classifiers = [
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
     "Topic :: Text Processing :: Indexing",
