@@ -7,7 +7,8 @@
 //! ```
 //!
 //! A record is `chunk_id u64, byte_start u64, byte_end u64`, the lengths of `doc_key`, `body`,
-//! and `prefix` as u32 (`u32::MAX` for no prefix), then those bytes.
+//! `prefix` (`u32::MAX` for none), and `metadata` as u32, then those bytes. Metadata is a pair
+//! count u32, then each key and value as a u32 length and its bytes.
 
 use std::borrow::Borrow;
 use std::path::Path;
@@ -18,7 +19,7 @@ use super::StoredChunk;
 use crate::error::{Error, Result};
 use crate::segment::ChunkRecord;
 
-const MAGIC: &[u8; 8] = b"GYRDOCS1";
+const MAGIC: &[u8; 8] = b"GYRDOCS2";
 const HEADER: usize = 16;
 const INDEX_ENTRY: usize = 20;
 const BLOCK_BYTES: usize = 16 * 1024;
@@ -36,11 +37,23 @@ fn push_record(chunk: &ChunkRecord, out: &mut Vec<u8>) {
     out.extend_from_slice(&(chunk.body.len() as u32).to_le_bytes());
     let prefix_len = chunk.prefix.as_ref().map_or(NO_PREFIX, |p| p.len() as u32);
     out.extend_from_slice(&prefix_len.to_le_bytes());
+    let mut metadata = Vec::new();
+    if !chunk.metadata.is_empty() {
+        metadata.extend_from_slice(&(chunk.metadata.len() as u32).to_le_bytes());
+        for (key, value) in &chunk.metadata {
+            for text in [key, value] {
+                metadata.extend_from_slice(&(text.len() as u32).to_le_bytes());
+                metadata.extend_from_slice(text.as_bytes());
+            }
+        }
+    }
+    out.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
     out.extend_from_slice(chunk.doc_id.as_bytes());
     out.extend_from_slice(chunk.body.as_bytes());
     if let Some(prefix) = &chunk.prefix {
         out.extend_from_slice(prefix.as_bytes());
     }
+    out.extend_from_slice(&metadata);
 }
 
 /// Encodes every chunk, in order, as one `docs.bin`.
@@ -210,10 +223,11 @@ struct Head {
     key_len: usize,
     body_len: usize,
     prefix_len: Option<usize>,
+    metadata_len: usize,
 }
 
 fn read_head(raw: &[u8], at: &mut usize) -> Result<Head> {
-    let bytes = take(raw, at, 36)?;
+    let bytes = take(raw, at, 40)?;
     let u64_at = |i: usize| u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
     let u32_at = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
     let prefix = u32_at(32);
@@ -224,12 +238,13 @@ fn read_head(raw: &[u8], at: &mut usize) -> Result<Head> {
         key_len: u32_at(24) as usize,
         body_len: u32_at(28) as usize,
         prefix_len: (prefix != NO_PREFIX).then_some(prefix as usize),
+        metadata_len: u32_at(36) as usize,
     })
 }
 
 fn skip_record(raw: &[u8], at: &mut usize) -> Result<()> {
     let head = read_head(raw, at)?;
-    take(raw, at, head.key_len + head.body_len + head.prefix_len.unwrap_or(0)).map(|_| ())
+    take(raw, at, head.key_len + head.body_len + head.prefix_len.unwrap_or(0) + head.metadata_len).map(|_| ())
 }
 
 fn read_record(raw: &[u8], at: &mut usize) -> Result<StoredChunk> {
@@ -240,11 +255,29 @@ fn read_record(raw: &[u8], at: &mut usize) -> Result<StoredChunk> {
     let doc_key = text(at, head.key_len)?;
     let body = text(at, head.body_len)?;
     let prefix = head.prefix_len.map(|len| text(at, len)).transpose()?;
+    let blob = take(raw, at, head.metadata_len)?;
+    let mut metadata = Vec::new();
+    if !blob.is_empty() {
+        let mut inner = 0;
+        let count = u32::from_le_bytes(take(blob, &mut inner, 4)?.try_into().unwrap());
+        let field = |inner: &mut usize| -> Result<String> {
+            let len = u32::from_le_bytes(take(blob, inner, 4)?.try_into().unwrap()) as usize;
+            String::from_utf8(take(blob, inner, len)?.to_vec()).map_err(|_| corrupt("metadata is not UTF-8"))
+        };
+        for _ in 0..count {
+            let key = field(&mut inner)?;
+            metadata.push((key, field(&mut inner)?));
+        }
+        if inner != blob.len() {
+            return Err(corrupt("metadata length disagrees with its pairs"));
+        }
+    }
     Ok(StoredChunk {
         chunk_id: head.chunk_id,
         doc_key,
         body,
         prefix,
+        metadata,
         byte_start: head.byte_start,
         byte_end: head.byte_end,
     })

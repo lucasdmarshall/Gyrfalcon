@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-use gyrfalcon::{Document, Index, RetrieveOptions, Tier};
+use gyrfalcon::{Document, Filter, Index, RetrieveOptions, Tier};
 use pyo3::exceptions::{PyFileNotFoundError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
@@ -30,20 +30,48 @@ fn parse_tier(name: &str) -> PyResult<Tier> {
     Tier::parse(name).ok_or_else(|| PyValueError::new_err(format!("unknown tier {name:?}; use \"lite\" or \"full\"")))
 }
 
+type Metadata = Vec<(String, String)>;
+
 /// One retrieved chunk.
-#[pyclass(frozen, get_all, module = "gyrfalcon")]
+#[pyclass(frozen, module = "gyrfalcon")]
 struct Hit {
+    #[pyo3(get)]
     chunk_id: u64,
+    #[pyo3(get)]
     doc_id: String,
+    #[pyo3(get)]
     score: f32,
+    #[pyo3(get)]
     text: String,
     /// Byte offsets of the chunk in its document's text.
+    #[pyo3(get)]
     start: u64,
+    #[pyo3(get)]
     end: u64,
+    pairs: Metadata,
 }
 
 #[pymethods]
 impl Hit {
+    /// The document's metadata: each key's value, or a list when the key repeats.
+    #[getter]
+    fn metadata<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let dict = pyo3::types::PyDict::new(py);
+        for (key, value) in &self.pairs {
+            match dict.get_item(key)? {
+                None => dict.set_item(key, value)?,
+                Some(existing) => match existing.cast::<pyo3::types::PyList>() {
+                    Ok(list) => list.append(value)?,
+                    Err(_) => dict.set_item(
+                        key,
+                        pyo3::types::PyList::new(py, [existing, value.into_pyobject(py)?.into_any()])?,
+                    )?,
+                },
+            }
+        }
+        Ok(dict)
+    }
+
     fn __repr__(&self) -> String {
         let preview: String = self.text.chars().take(60).collect();
         format!(
@@ -110,31 +138,35 @@ impl Collection {
     /// Indexes `(doc_id, text)` pairs in one write and returns the number of chunks written.
     /// Writing a doc_id that already exists adds its chunks beside the old ones; use `update`
     /// to replace a document.
-    fn add_many(&self, py: Python<'_>, docs: Vec<(String, String)>) -> PyResult<usize> {
-        let docs: Vec<Document> = docs.into_iter().map(|(id, text)| Document::body(id, text)).collect();
+    fn add_many(&self, py: Python<'_>, docs: Vec<(String, String, Metadata)>) -> PyResult<usize> {
+        let docs: Vec<Document> =
+            docs.into_iter().map(|(id, text, metadata)| Document::body(id, text).with_metadata(metadata)).collect();
         self.write(py, move |index| Ok(index.index_documents(&docs).map_err(engine_error)?.chunk_ids.len()))
     }
 
     /// Indexes one document and returns its chunk ids.
-    fn add(&self, py: Python<'_>, doc_id: String, text: String) -> PyResult<Vec<u64>> {
-        let doc = Document::body(doc_id, text);
+    #[pyo3(signature = (doc_id, text, metadata = Vec::new()))]
+    fn add(&self, py: Python<'_>, doc_id: String, text: String, metadata: Metadata) -> PyResult<Vec<u64>> {
+        let doc = Document::body(doc_id, text).with_metadata(metadata);
         self.write(py, move |index| Ok(index.index_documents(&[doc]).map_err(engine_error)?.chunk_ids))
     }
 
     /// Reads a file (PDF, HTML, or text) and indexes it under `doc_id`, by default its path.
     /// Returns the number of chunks written.
-    #[pyo3(signature = (path, doc_id = None))]
-    fn add_file(&self, py: Python<'_>, path: PathBuf, doc_id: Option<String>) -> PyResult<usize> {
+    #[pyo3(signature = (path, doc_id = None, metadata = Vec::new()))]
+    fn add_file(&self, py: Python<'_>, path: PathBuf, doc_id: Option<String>, metadata: Metadata) -> PyResult<usize> {
         let doc_id = doc_id.unwrap_or_else(|| path.to_string_lossy().into_owned());
         self.write(py, move |index| {
             let text = gyrfalcon_ingest::read_file(&path).map_err(ingest_error)?.text;
-            Ok(index.index_documents(&[Document::body(doc_id, text)]).map_err(engine_error)?.chunk_ids.len())
+            let doc = Document::body(doc_id, text).with_metadata(metadata);
+            Ok(index.index_documents(&[doc]).map_err(engine_error)?.chunk_ids.len())
         })
     }
 
     /// Replaces a document's chunks with those of `text` in one atomic write.
-    fn update(&self, py: Python<'_>, doc_id: String, text: String) -> PyResult<usize> {
-        let doc = Document::body(doc_id, text);
+    #[pyo3(signature = (doc_id, text, metadata = Vec::new()))]
+    fn update(&self, py: Python<'_>, doc_id: String, text: String, metadata: Metadata) -> PyResult<usize> {
+        let doc = Document::body(doc_id, text).with_metadata(metadata);
         self.write(py, move |index| Ok(index.update_document(doc).map_err(engine_error)?.chunk_ids.len()))
     }
 
@@ -143,13 +175,22 @@ impl Collection {
         self.write(py, move |index| Ok(index.delete_document(&doc_id).map_err(engine_error)?.deleted_chunks))
     }
 
-    /// The best `k` chunks for `query`, best first.
-    #[pyo3(signature = (query, k = 10))]
-    fn search(&self, py: Python<'_>, query: String, k: usize) -> PyResult<Vec<Hit>> {
+    /// The best `k` chunks for `query`, best first, among the documents matching every
+    /// `(key, values)` clause of `filter` (any of the values).
+    #[pyo3(signature = (query, k = 10, filter = Vec::new()))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        query: String,
+        k: usize,
+        filter: Vec<(String, Vec<String>)>,
+    ) -> PyResult<Vec<Hit>> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
-        let hits = self.read(py, move |index| index.retrieve(&query, RetrieveOptions { rerank: false, limit: k }))?;
+        let filter = filter.into_iter().fold(Filter::new(), |f, (key, values)| f.any(key, values));
+        let options = RetrieveOptions { rerank: false, limit: k };
+        let hits = self.read(py, move |index| index.retrieve_filtered(&query, options, Some(&filter)))?;
         Ok(hits
             .hits
             .into_iter()
@@ -160,6 +201,7 @@ impl Collection {
                 text: hit.body,
                 start: hit.byte_start,
                 end: hit.byte_end,
+                pairs: hit.metadata,
             })
             .collect())
     }

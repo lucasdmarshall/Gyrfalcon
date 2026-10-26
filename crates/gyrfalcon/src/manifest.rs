@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::store;
 
-/// 6: small writes go to `wal/{wal_generation}.log` and a buffer; 5 holds `keys.bin` instead of a
-/// catalog; 4 derives BM25 statistics from segment dictionaries; 3 added dense `codes.bin`;
-/// 2 held a USearch graph; 1 held Tantivy.
-pub const FORMAT_VERSION: u32 = 6;
+/// 7: chunks carry document metadata (docs.bin `GYRDOCS2`, WAL records) indexed as filter
+/// terms; 6: small writes go to `wal/{wal_generation}.log` and a buffer; 5 holds `keys.bin`
+/// instead of a catalog; 4 derives BM25 statistics from segment dictionaries; 3 added dense
+/// `codes.bin`; 2 held a USearch graph; 1 held Tantivy.
+pub const FORMAT_VERSION: u32 = 7;
 pub const ANALYZER_ID: &str = "gyr-text-v2";
 pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-small-en-v1.5";
 pub const DEFAULT_DIMENSION: u32 = 384;

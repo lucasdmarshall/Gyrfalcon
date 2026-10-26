@@ -4,7 +4,8 @@
 //! frame    len u32, crc32 u32 (of the payload), payload
 //! payload  record count u32, records, dead count u32, dead chunk ids u64
 //! record   chunk_id u64, byte_start u64, byte_end u64, then length-prefixed (u32) doc_id,
-//!          body, prefix (u32::MAX for none), and the quantized vector
+//!          body, prefix (u32::MAX for none), the quantized vector, and metadata: a pair count
+//!          u32, then each key and value length-prefixed
 //! ```
 //!
 //! A write call appends one frame and fsyncs, so its new chunks and the chunk ids it kills
@@ -29,6 +30,7 @@ pub struct WalChunk {
     pub body: String,
     pub prefix: Option<String>,
     pub vector: Vec<u8>,
+    pub metadata: Vec<(String, String)>,
 }
 
 /// One write call.
@@ -58,6 +60,11 @@ impl Frame {
                 None => payload.extend_from_slice(&NONE.to_le_bytes()),
             }
             put_bytes(&mut payload, &chunk.vector);
+            payload.extend_from_slice(&(chunk.metadata.len() as u32).to_le_bytes());
+            for (key, value) in &chunk.metadata {
+                put_bytes(&mut payload, key.as_bytes());
+                put_bytes(&mut payload, value.as_bytes());
+            }
         }
         payload.extend_from_slice(&(self.dead.len() as u32).to_le_bytes());
         for id in &self.dead {
@@ -97,7 +104,16 @@ impl Frame {
                 None => None,
             };
             let vector = text(false)??;
-            frame.chunks.push(WalChunk { chunk_id, doc_id, byte_start, byte_end, body, prefix, vector });
+            let pairs = u32_of(take(4)?);
+            let mut metadata = Vec::new();
+            for _ in 0..pairs {
+                let key_len = u32_of(take(4)?) as usize;
+                let key = String::from_utf8(take(key_len)?.to_vec()).ok()?;
+                let value_len = u32_of(take(4)?) as usize;
+                let value = String::from_utf8(take(value_len)?.to_vec()).ok()?;
+                metadata.push((key, value));
+            }
+            frame.chunks.push(WalChunk { chunk_id, doc_id, byte_start, byte_end, body, prefix, vector, metadata });
         }
         let dead = u32_of(take(4)?);
         for _ in 0..dead {
@@ -181,6 +197,11 @@ mod tests {
                 body: "မြန်မာ body".into(),
                 prefix: id.is_multiple_of(2).then(|| "prefix".to_string()),
                 vector: vec![1, 2, 255],
+                metadata: if id == 2 {
+                    vec![("lang".into(), "my".into()), ("tag".into(), "ü".into())]
+                } else {
+                    vec![]
+                },
             }],
             dead: dead.to_vec(),
         }

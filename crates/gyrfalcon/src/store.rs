@@ -120,3 +120,67 @@ impl Tombstones {
         Ok(Tombstones::from_ids(decode_ids(bytes)?))
     }
 }
+
+/// The chunks a search must not return: the dead ones, and under a filter every chunk outside
+/// it. Searches ask `contains` per candidate; the dense cascade asks for its rows at once.
+pub trait Excluded: Sync {
+    fn contains(&self, id: u64) -> bool;
+
+    /// The rows of a segment (whose ids, ascending, are `ids`) a search may return.
+    fn rows(&self, ids: &[u64]) -> RowMask;
+}
+
+/// A segment's searchable rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowMask {
+    /// Every row except these, ascending.
+    Except(Vec<usize>),
+    /// Only these rows, ascending.
+    Only(Vec<usize>),
+}
+
+impl RowMask {
+    pub fn allows(&self, row: usize) -> bool {
+        match self {
+            RowMask::Except(rows) => rows.binary_search(&row).is_err(),
+            RowMask::Only(rows) => rows.binary_search(&row).is_ok(),
+        }
+    }
+}
+
+impl Excluded for Tombstones {
+    fn contains(&self, id: u64) -> bool {
+        Tombstones::contains(self, id)
+    }
+
+    fn rows(&self, ids: &[u64]) -> RowMask {
+        let (Some(&low), Some(&high)) = (ids.first(), ids.last()) else { return RowMask::Except(Vec::new()) };
+        RowMask::Except(self.in_range(low, high).iter().filter_map(|id| ids.binary_search(id).ok()).collect())
+    }
+}
+
+/// A filter's chunks, less the dead ones.
+pub struct Filtered<'a> {
+    pub dead: &'a Tombstones,
+    /// The chunk ids the filter matches, ascending.
+    pub allowed: &'a [u64],
+}
+
+impl Excluded for Filtered<'_> {
+    fn contains(&self, id: u64) -> bool {
+        self.allowed.binary_search(&id).is_err() || self.dead.contains(id)
+    }
+
+    fn rows(&self, ids: &[u64]) -> RowMask {
+        let (Some(&low), Some(&high)) = (ids.first(), ids.last()) else { return RowMask::Only(Vec::new()) };
+        let start = self.allowed.partition_point(|id| *id < low);
+        let end = self.allowed.partition_point(|id| *id <= high);
+        RowMask::Only(
+            self.allowed[start..end.max(start)]
+                .iter()
+                .filter(|id| !self.dead.contains(**id))
+                .filter_map(|id| ids.binary_search(id).ok())
+                .collect(),
+        )
+    }
+}

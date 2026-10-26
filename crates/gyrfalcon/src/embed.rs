@@ -11,6 +11,12 @@ use crate::prepare::tokenize;
 pub trait Embedder: Send + Sync {
     /// Embeds `embed_text` values unchanged. Returns one `f32` vector of `dimension()` each.
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
+    /// Bytes of text per ingest `embed` call, every text counted at the batch's longest. A
+    /// padded model wants small batches: its activations grow with the batch and the square
+    /// of its longest text.
+    fn batch_bytes(&self) -> usize {
+        crate::index::EMBED_BATCH_BYTES
+    }
     fn model_id(&self) -> &str;
     fn dimension(&self) -> u32;
     /// Texts a recording test double has seen. Production embedders record nothing.
@@ -120,6 +126,12 @@ impl<S: EmbedSession> SessionEmbedder<S> {
 impl<S: EmbedSession> Embedder for SessionEmbedder<S> {
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         self.session.run(texts)
+    }
+
+    /// 8 KB: four 2 KB chunks or more shorter ones. On full-tier SciFact (4 cores), 32 KB took
+    /// 243 s and 1.8 GB, 16 KB 223 s and 850 MB, 8 KB 195 s and 497 MB, 4 KB 207 s and 332 MB.
+    fn batch_bytes(&self) -> usize {
+        8 * 1024
     }
 
     fn model_id(&self) -> &str {

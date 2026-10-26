@@ -98,3 +98,29 @@ def test_searches_run_alongside_each_other(col):
     for thread in threads:
         thread.join()
     assert errors == []
+
+
+def test_metadata_and_filters(col, tmp_path):
+    col.add("a", "falcons hunt over the tundra", metadata={"lang": "en", "tag": ["birds", "arctic"], "year": 2024})
+    col.add_many([
+        ("b", "falcons nest on cliffs", {"lang": "en", "tag": "birds"}),
+        ("c", "falcons sont des rapaces", {"lang": "fr", "tag": "birds"}),
+        ("d", "falcon heavy rocket", {"lang": "en", "tag": "space", "public": True}),
+    ])
+    found = lambda **f: sorted({h.doc_id for h in col.search("falcons", k=20, filter=f)})
+    assert found() == ["a", "b", "c", "d"]
+    assert found(lang="en") == ["a", "b", "d"]
+    assert found(lang="en", tag="birds") == ["a", "b"]
+    assert found(tag=["arctic", "space"]) == ["a", "d"]
+    assert found(year=2024) == ["a"]
+    assert found(public=True) == ["d"]
+    assert found(lang="de") == []
+    hit = col.search("tundra", k=1)[0]
+    assert hit.metadata == {"lang": "en", "tag": ["birds", "arctic"], "year": "2024"}
+
+    col.update("c", "falcons en anglais", metadata={"lang": "en"})
+    assert found(lang="fr") == []
+    page = tmp_path / "page.md"
+    page.write_text("falcons of the steppe")
+    col.add_path(page, metadata={"source": "web"})
+    assert found(source="web") == [str(page)]

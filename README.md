@@ -10,8 +10,8 @@ from gyrfalcon import Collection
 
 with Collection("./my-index") as col:          # created on first use; lite tier by default
     col.add_path("docs/")                       # PDF, HTML, Markdown, and text files
-    col.add("note-1", "Gyrfalcons are the largest falcons.")
-    for hit in col.search("largest falcon", k=5):
+    col.add("note-1", "Gyrfalcons are the largest falcons.", metadata={"topic": "birds"})
+    for hit in col.search("largest falcon", k=5, filter={"topic": "birds"}):
         print(f"{hit.score:.3f}  {hit.doc_id}  {hit.text[:80]}")
 ```
 
@@ -54,13 +54,16 @@ uses `scripts/fetch-models.sh`. PDFs need PDFium (`pip install gyrfalcon[pdf]`, 
 ## How it works
 
 - **Lexical:** an owned BM25 index per segment (bit-packed postings with block skip data,
-  one-byte length norms, scores identical to Tantivy's), searched with block-max MaxScore.
+  one-byte length norms, scores identical to Tantivy's), scored term at a time.
   The analyzer drops English stopwords and Snowball-stems.
 - **Dense:** a graph-free index. Rows are centred, rotated by a randomized Hadamard transform,
   and kept as sign bits; a query is answered by a Hamming prefilter, a 4-bit estimate, and an
   exact int8 rescore. Recall@50 is 0.996–1.000 of exact search, with no graph to build.
 - **Fusion:** the lexical candidates are rescored with the dense similarity, with a weight
   chosen per tier on validation splits.
+- **Filters:** document metadata is indexed as reserved terms, so a filter is a postings
+  lookup; both legs then skip everything outside it, and the dense cascade scans only the
+  allowed rows when they are few.
 - **Writes:** small writes go to a write-ahead log and an in-memory buffer that queries see at
   once; larger ones seal immutable segments, merged in the background. Updates and deletes are
   atomic, and a crash loses at most the write in flight.

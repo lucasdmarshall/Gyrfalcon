@@ -29,8 +29,14 @@ pub struct TermCounts {
 }
 
 impl TermCounts {
-    pub fn from_tokens(tokens: &[Token]) -> TermCounts {
-        let mut terms: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+    /// The terms of `tokens`, plus one filter term per distinct metadata pair. Filter terms
+    /// are not tokens: they leave the token count, and so BM25 length norms, unchanged.
+    pub fn new(tokens: &[Token], metadata: &[(String, String)]) -> TermCounts {
+        let mut filters: Vec<String> = metadata.iter().map(|(k, v)| crate::filter::filter_term(k, v)).collect();
+        filters.sort_unstable();
+        filters.dedup();
+        let mut terms: Vec<&str> =
+            tokens.iter().map(|t| t.text.as_str()).chain(filters.iter().map(String::as_str)).collect();
         terms.sort_unstable();
         let mut text = String::with_capacity(terms.iter().map(|t| t.len()).sum());
         let mut entries = Vec::new();

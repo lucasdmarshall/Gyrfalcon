@@ -829,3 +829,53 @@ The Python layer downloads a tier's model files from Hugging Face on first use i
 environment apply, and it points `ORT_DYLIB_PATH` and `GYR_PDFIUM` at the libraries the
 `onnxruntime` and `pypdfium2` packages ship when those are installed (extras `full` and `pdf`).
 Opening a lite collection from Python takes about 60 ms.
+
+### Block-max MaxScore, tried and reverted (2026-10-26)
+
+A document-at-a-time block-max MaxScore search (terms ordered by their list bounds,
+non-essential lists probed through skip entries, scores summed in term order so results were
+bit-identical) returned the same top 100 on every BEIR query but was slower at these sizes:
+lexical p50 58 to 177 us on SciFact, 576 to 1,596 us on FiQA, and 365 to 4,151 us on ArguAna,
+whose queries run to 50 or more terms. Term at a time costs about 11 ns per posting (sequential
+decode, scatter into a cache-resident array); document at a time pays per doc for every query
+term, which outweighs what the skipping saves on collections of 5,000 to 57,000 docs. The
+exhaustive scorer stays. A pruned search worth having would score term at a time inside doc-id
+windows and prune between windows (as Lucene's MaxScore bulk scorer does), measured on a
+collection of a million chunks or more.
+
+### Embedding batches sized for the model (2026-10-26)
+
+Ingest embeds texts sorted by length, longest first, in batches bounded by
+`Embedder::batch_bytes` (every text counted at the batch's longest) and at most 32 texts;
+threads take batches from a shared queue. A padded model computes a batch at its longest text,
+so similar lengths waste no padding, and its activations grow with the batch and the square of
+the longest text. ONNX embedders use 8 KB. Full-tier SciFact on 4 cores:
+
+| batching | index | peak RSS |
+|---|---|---|
+| 32 texts in document order | 482 s | 2,149 MB |
+| sorted, 32 KB | 243 s | 1,807 MB |
+| sorted, 16 KB | 223 s | 850 MB |
+| sorted, 8 KB (default) | 195 s | 497 MB |
+| sorted, 4 KB | 207 s | 332 MB |
+| sorted, 32 KB, ORT arena and memory pattern off | 626 s | 940 MB |
+
+nDCG@10 moved between 0.742 and 0.748 across these runs: the int8 model quantizes activations
+per batch, so batch composition changes vectors slightly. The static embedder computes each text
+alone; its results are identical under any batching.
+
+### Metadata filters (format version 7, 2026-10-26)
+
+A `Document` carries `(key, value)` metadata pairs (a key may repeat). Every chunk stores them
+(docs.bin `GYRDOCS2`, WAL records) and indexes each distinct pair as the filter term
+`\u{1}key\u{1}value` in its term counts, outside the token count, so BM25 length norms and
+scores do not change (tested). `Index::retrieve_filtered(query, options, Some(&filter))` takes
+a `Filter`: clauses that must all hold, each matching any of its values. The matching chunk
+ids come from the filter terms' postings in every segment and buffer batch, and both legs then
+exclude everything else through the same `Excluded` interface the tombstones use. The dense
+cascade receives the allowed rows of each segment; when they fit in the prefilter budget they
+all go to the estimate and exact stages, so a selective filter still returns every match a
+dense query can reach. Hits return their metadata. The Python package takes
+`metadata={"tag": ["a", "b"], "year": 2024}` on writes and `filter={"tag": ["a", "b"]}` on
+search, the HTTP API `metadata` per document and `filter` on retrieve, and `gyr query` a
+repeatable `--filter key=value`.

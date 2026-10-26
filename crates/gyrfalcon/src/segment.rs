@@ -22,7 +22,7 @@ use crate::keys::DocKeys;
 use crate::lexical::{self, CollectionStats, LexicalSegment, ScoredId, StoredChunk};
 use crate::manifest::{IndexConfig, Manifest};
 use crate::prepare::{prepare, prepare_with_prefix, TermCounts, Token};
-use crate::store::{self, Tombstones};
+use crate::store::{self, Excluded};
 use crate::vector::{self, VectorSegment};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,6 +47,8 @@ pub struct ChunkRecord {
     pub byte_end: u64,
     pub body: String,
     pub prefix: Option<String>,
+    /// The document's metadata, indexed as filter terms.
+    pub metadata: Vec<(String, String)>,
     /// What the embedder receives (`PreparedText::embed_text`); emptied once `vector` is set.
     pub embed_text: String,
     pub terms: TermCounts,
@@ -57,7 +59,14 @@ pub struct ChunkRecord {
 impl ChunkRecord {
     /// Analyzes `body`, after `prefix` when there is one, into a record without a chunk id or
     /// a vector.
-    pub fn new(doc_id: String, byte_start: u64, byte_end: u64, body: String, prefix: Option<String>) -> ChunkRecord {
+    pub fn new(
+        doc_id: String,
+        byte_start: u64,
+        byte_end: u64,
+        body: String,
+        prefix: Option<String>,
+        metadata: Vec<(String, String)>,
+    ) -> ChunkRecord {
         let prepared = match &prefix {
             Some(prefix) => prepare_with_prefix(prefix, &body),
             None => prepare(&body),
@@ -69,7 +78,8 @@ impl ChunkRecord {
             byte_end,
             body,
             prefix,
-            terms: TermCounts::from_tokens(&prepared.tokens),
+            terms: TermCounts::new(&prepared.tokens, &metadata),
+            metadata,
             embed_text: prepared.embed_text,
             vector: Vec::new(),
         }
@@ -111,7 +121,7 @@ impl Segment {
         tokens: &[Token],
         limit: usize,
         stats: &CollectionStats,
-        dead: &Tombstones,
+        dead: &impl Excluded,
     ) -> Result<Vec<ScoredId>> {
         self.lexical.search(tokens, limit, stats, dead, &self.ids)
     }

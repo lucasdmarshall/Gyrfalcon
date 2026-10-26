@@ -101,7 +101,12 @@ fn prefix_off_embeds_the_body_only() {
     let mut index = Index::create_in_temp(&IndexConfig::test_default()).unwrap();
     index.set_embedder(Box::new(RecordingEmbedder::new(384)));
     index
-        .index_documents(&[Document { doc_id: "a".into(), text: "Body text".into(), contextual_prefix: false }])
+        .index_documents(&[Document {
+            doc_id: "a".into(),
+            text: "Body text".into(),
+            contextual_prefix: false,
+            metadata: vec![],
+        }])
         .unwrap();
     assert_eq!(index.embedder_texts(), vec!["Body text".to_string()]);
 }
@@ -117,7 +122,12 @@ fn prefix_on_embeds_prefix_then_body_and_cites_the_body() {
     index.set_chat_endpoint(endpoint);
     index.set_embedder(Box::new(RecordingEmbedder::new(384)));
     index
-        .index_documents(&[Document { doc_id: "a".into(), text: "Body text".into(), contextual_prefix: true }])
+        .index_documents(&[Document {
+            doc_id: "a".into(),
+            text: "Body text".into(),
+            contextual_prefix: true,
+            metadata: vec![],
+        }])
         .unwrap();
     assert_eq!(index.embedder_texts(), vec!["About gardening.\n\nBody text".to_string()]);
     let request: serde_json::Value = serde_json::from_slice(&requests.recv().unwrap()).unwrap();
@@ -155,6 +165,40 @@ fn http_routes_call_the_library() {
     assert_eq!(empty.status, 400);
     assert_eq!(empty.json["error"], "empty_query");
     assert_eq!(server.get("/nope").status, 404);
+}
+
+#[test]
+fn http_metadata_and_filters() {
+    let server = TestServer::spawn();
+    let body = r#"{"documents":[
+        {"doc_id":"a","text":"falcon notes","metadata":{"lang":"en","tag":["birds","arctic"],"year":2024}},
+        {"doc_id":"b","text":"falcon notes","metadata":{"lang":"fr"}},
+        {"doc_id":"c","text":"falcon notes"}]}"#;
+    assert_eq!(server.post("/v1/documents", body).status, 200);
+    let found = |filter: &str| -> Vec<String> {
+        let response = server
+            .post("/v1/retrieve", &format!(r#"{{"query":"falcon","rerank":false,"limit":10,"filter":{filter}}}"#));
+        assert_eq!(response.status, 200, "{}", response.body);
+        let mut ids: Vec<String> = response.json["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["doc_id"].as_str().unwrap().to_string())
+            .collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(found("null"), ["a", "b", "c"]);
+    assert_eq!(found(r#"{"lang":"en"}"#), ["a"]);
+    assert_eq!(found(r#"{"lang":["en","fr"]}"#), ["a", "b"]);
+    assert_eq!(found(r#"{"year":2024,"tag":"arctic"}"#), ["a"]);
+    let hit = server.post("/v1/retrieve", r#"{"query":"falcon","rerank":false,"limit":1,"filter":{"lang":"en"}}"#);
+    assert_eq!(
+        hit.json["hits"][0]["metadata"],
+        serde_json::json!({"lang":"en","tag":["birds","arctic"],"year":"2024"})
+    );
+    let bad = server.post("/v1/retrieve", r#"{"query":"falcon","filter":["lang"]}"#);
+    assert_eq!(bad.status, 400);
 }
 
 #[test]

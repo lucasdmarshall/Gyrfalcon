@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use gyrfalcon::{
-    AnswerEvent, AnswerOptions, ChatConfig, Document, Embedder, Error, Fusion, HashEmbedder, HttpEmbedder,
+    AnswerEvent, AnswerOptions, ChatConfig, Document, Embedder, Error, Filter, Fusion, HashEmbedder, HttpEmbedder,
     IncompatibleField, Index, IndexConfig, OrtModel, OrtReranker, Quantization, RetrieveOptions, SessionEmbedder,
     StaticEmbedder,
 };
@@ -44,6 +44,10 @@ enum Command {
         /// Stream an answer from the chat endpoint instead of printing hits.
         #[arg(long)]
         answer: bool,
+        /// Only documents with this metadata, `key=value`; repeat a key for any of its values
+        /// and different keys for all of them.
+        #[arg(long = "filter", value_name = "KEY=VALUE")]
+        filters: Vec<String>,
         #[command(flatten)]
         model: ModelArgs,
     },
@@ -359,7 +363,7 @@ fn run(cli: Cli) -> Result<(), Error> {
             });
             println!("{report}");
         }
-        Command::Query { dir, text, limit, rerank, answer, model } => {
+        Command::Query { dir, text, limit, rerank, answer, filters, model } => {
             let index = model.open(&dir, false)?;
             if answer {
                 let stream = index.answer(&text, AnswerOptions { rerank, ..AnswerOptions::default() })?;
@@ -377,7 +381,21 @@ fn run(cli: Cli) -> Result<(), Error> {
                     }
                 }
             } else {
-                let hits = index.retrieve(&text, RetrieveOptions { rerank, limit })?;
+                let mut clauses: Vec<(String, Vec<String>)> = Vec::new();
+                for filter in &filters {
+                    let (key, value) = filter.split_once('=').ok_or_else(|| {
+                        Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("--filter {filter}: use KEY=VALUE"),
+                        ))
+                    })?;
+                    match clauses.iter_mut().find(|(k, _)| k == key) {
+                        Some((_, values)) => values.push(value.to_string()),
+                        None => clauses.push((key.to_string(), vec![value.to_string()])),
+                    }
+                }
+                let filter = clauses.into_iter().fold(Filter::new(), |f, (key, values)| f.any(key, values));
+                let hits = index.retrieve_filtered(&text, RetrieveOptions { rerank, limit }, Some(&filter))?;
                 for hit in hits.hits {
                     println!("{}\t{}\t{:.6}", hit.chunk_id, hit.doc_id, hit.score);
                 }

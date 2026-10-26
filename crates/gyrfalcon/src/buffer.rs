@@ -13,7 +13,7 @@ use crate::lexical::{self, CollectionStats, ScoredId, StoredChunk};
 use crate::manifest::Quantization;
 use crate::prepare::Token;
 use crate::segment::ChunkRecord;
-use crate::store::Tombstones;
+use crate::store::Excluded;
 use crate::vector::{self, DenseQuery};
 
 /// Batches combine until they hold this many chunks.
@@ -68,12 +68,18 @@ impl Batch {
         self.postings.get(term).map_or(0, |p| p.len() as u64)
     }
 
+    /// The chunk ids holding `term`.
+    pub fn chunks_with<'a>(&'a self, term: &str) -> impl Iterator<Item = u64> + 'a {
+        let rows = self.postings.get(term).map(Vec::as_slice).unwrap_or_default();
+        rows.iter().map(|&(row, _)| self.records[row as usize].chunk_id)
+    }
+
     pub fn find(&self, chunk_id: u64) -> Option<&ChunkRecord> {
         self.records.binary_search_by_key(&chunk_id, |r| r.chunk_id).ok().map(|at| self.records[at].as_ref())
     }
 
     /// Every live chunk holding a query term, scored like `LexicalSegment::search`.
-    pub fn search_lexical(&self, tokens: &[Token], stats: &CollectionStats, dead: &Tombstones) -> Vec<ScoredId> {
+    pub fn search_lexical(&self, tokens: &[Token], stats: &CollectionStats, dead: &impl Excluded) -> Vec<ScoredId> {
         if tokens.is_empty() || stats.num_docs == 0 {
             return Vec::new();
         }
@@ -99,7 +105,7 @@ impl Batch {
     }
 
     /// Exact cosine distances of every live chunk.
-    pub fn search_dense(&self, query: &DenseQuery, dead: &Tombstones) -> Vec<(u64, f32)> {
+    pub fn search_dense(&self, query: &DenseQuery, dead: &impl Excluded) -> Vec<(u64, f32)> {
         let query_norm = vector::query_norm(self.quantization, query);
         self.records
             .iter()
@@ -176,6 +182,7 @@ pub fn stored(record: &ChunkRecord) -> StoredChunk {
         doc_key: record.doc_id.clone(),
         body: record.body.clone(),
         prefix: record.prefix.clone(),
+        metadata: record.metadata.clone(),
         byte_start: record.byte_start,
         byte_end: record.byte_end,
     }

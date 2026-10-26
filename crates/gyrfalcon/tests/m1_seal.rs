@@ -80,7 +80,7 @@ fn create_writes_epoch_1_and_empty_generation_0_files() {
     Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     let manifest = Manifest::read(&dir.path().join("manifest.json")).unwrap();
     assert_eq!(manifest.epoch, 1);
-    assert_eq!(manifest.format_version, 6);
+    assert_eq!(manifest.format_version, 7);
     assert_eq!(manifest.tombstone_generation, 0);
     assert_eq!((manifest.bm25_num_docs, manifest.bm25_num_tokens), (0, 0));
     assert_eq!(manifest.segments_per_tier, 8);
@@ -159,7 +159,12 @@ fn index_documents_publishes_chunk_ids_and_epoch_2() {
     let mut index = Index::create(dir.path(), &IndexConfig::test_default()).unwrap();
     index.write_buffer = 0;
     let report = index
-        .index_documents(&[Document { doc_id: "a".into(), text: "alpha beta".into(), contextual_prefix: false }])
+        .index_documents(&[Document {
+            doc_id: "a".into(),
+            text: "alpha beta".into(),
+            contextual_prefix: false,
+            metadata: vec![],
+        }])
         .unwrap();
     assert_eq!(report.chunk_ids.len(), 1);
     let manifest = Manifest::read(&dir.path().join("manifest.json")).unwrap();
@@ -188,7 +193,12 @@ fn crash_before_rename_keeps_the_previous_manifest() {
     index.write_buffer = 0;
     index.fail_before_rename = true;
     assert!(index
-        .index_documents(&[Document { doc_id: "a".into(), text: "alpha".into(), contextual_prefix: false }])
+        .index_documents(&[Document {
+            doc_id: "a".into(),
+            text: "alpha".into(),
+            contextual_prefix: false,
+            metadata: vec![]
+        }])
         .is_err());
     let manifest = Manifest::read(&dir.path().join("manifest.json")).unwrap();
     assert!(manifest.sealed_segments.is_empty());

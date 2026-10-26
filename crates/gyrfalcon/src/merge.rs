@@ -159,8 +159,15 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
             let Ok(row) = input.ids.binary_search(&stored.chunk_id) else { continue };
             let vector = vectors[row * row_len..(row + 1) * row_len].to_vec();
             records.push(
-                ChunkRecord::new(stored.doc_key, stored.byte_start, stored.byte_end, stored.body, stored.prefix)
-                    .with_vector(stored.chunk_id, vector),
+                ChunkRecord::new(
+                    stored.doc_key,
+                    stored.byte_start,
+                    stored.byte_end,
+                    stored.body,
+                    stored.prefix,
+                    stored.metadata,
+                )
+                .with_vector(stored.chunk_id, vector),
             );
         }
     }
@@ -358,7 +365,7 @@ impl Index {
                 .collect();
             let row = crate::vector::quantize(self.shared.config.quantization, &vector);
             records.push(
-                ChunkRecord::new(format!("{token}-{i}"), 0, token.len() as u64, token.to_string(), None)
+                ChunkRecord::new(format!("{token}-{i}"), 0, token.len() as u64, token.to_string(), None, Vec::new())
                     .with_vector(0, row),
             );
         }

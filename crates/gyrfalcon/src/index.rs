@@ -20,8 +20,8 @@ use crate::wal::{wal_path, Frame, Wal, WalChunk};
 
 /// Texts per `embed` call during ingest, at most.
 pub const EMBED_BATCH: usize = 32;
-/// Bytes of text per `embed` call during ingest, counting every text at the batch's longest:
-/// 32 texts up to 1 KB, 16 chunker windows of 2 KB.
+/// Default `Embedder::batch_bytes`: bytes of text per `embed` call during ingest, counting
+/// every text at the batch's longest.
 pub const EMBED_BATCH_BYTES: usize = 32 * 1024;
 
 /// The open segment seals when it reaches this many chunks.
@@ -43,12 +43,24 @@ pub struct Document {
     pub text: String,
     /// Ask the external LLM for a contextual prefix per chunk. Off by default.
     pub contextual_prefix: bool,
+    /// `(key, value)` pairs every chunk of the document carries and a search can filter on;
+    /// a key may repeat for several values.
+    pub metadata: Vec<(String, String)>,
 }
 
 impl Document {
-    /// A document without a contextual prefix.
+    /// A document without a contextual prefix or metadata.
     pub fn body(doc_id: impl Into<String>, text: impl Into<String>) -> Document {
-        Document { doc_id: doc_id.into(), text: text.into(), contextual_prefix: false }
+        Document { doc_id: doc_id.into(), text: text.into(), contextual_prefix: false, metadata: Vec::new() }
+    }
+
+    /// This document with `metadata` added.
+    pub fn with_metadata<K: Into<String>, V: Into<String>>(
+        mut self,
+        metadata: impl IntoIterator<Item = (K, V)>,
+    ) -> Document {
+        self.metadata.extend(metadata.into_iter().map(|(k, v)| (k.into(), v.into())));
+        self
     }
 }
 
@@ -709,7 +721,14 @@ impl Index {
     }
 
     fn record(&self, doc: &Document, start: usize, end: usize, prefix: Option<String>) -> ChunkRecord {
-        ChunkRecord::new(doc.doc_id.clone(), start as u64, end as u64, doc.text[start..end].to_string(), prefix)
+        ChunkRecord::new(
+            doc.doc_id.clone(),
+            start as u64,
+            end as u64,
+            doc.text[start..end].to_string(),
+            prefix,
+            doc.metadata.clone(),
+        )
     }
 
     pub(crate) fn chunk_records(&self, docs: &[Document]) -> Result<Vec<ChunkRecord>> {
@@ -734,17 +753,19 @@ impl Index {
 
     /// Embeds `embed_text` in batches and stores the quantized rows. Texts are batched by
     /// length, longest first: a padded model (ONNX) computes each batch at its longest text, so
-    /// similar lengths waste no padding, and `EMBED_BATCH_BYTES` bounds a batch's activations.
+    /// similar lengths waste no padding, and the embedder's `batch_bytes` bounds a batch's
+    /// activations.
     /// Batches run on every core; an embedder that serializes internally (an ort session)
     /// simply takes turns. Each text gets the same vector in any batch.
     pub(crate) fn embed_records(&self, records: &mut [ChunkRecord]) -> Result<()> {
         let mut order: Vec<usize> = (0..records.len()).collect();
         order.sort_by_key(|&i| std::cmp::Reverse(records[i].embed_text.len()));
+        let budget = self.embedder.batch_bytes();
         let mut batches: Vec<(Vec<usize>, Vec<String>)> = Vec::new();
         let mut start = 0;
         while start < order.len() {
             let longest = records[order[start]].embed_text.len().max(1);
-            let end = (start + (EMBED_BATCH_BYTES / longest).clamp(1, EMBED_BATCH)).min(order.len());
+            let end = (start + (budget / longest).clamp(1, EMBED_BATCH)).min(order.len());
             let rows = order[start..end].to_vec();
             // The records keep no copy of the text they were embedded from.
             let texts = rows.iter().map(|&i| std::mem::take(&mut records[i].embed_text)).collect();
@@ -843,7 +864,7 @@ impl Drop for Index {
 
 /// A logged chunk as a record, its terms recomputed by `prepare`.
 fn record_from_wal(chunk: WalChunk) -> ChunkRecord {
-    ChunkRecord::new(chunk.doc_id, chunk.byte_start, chunk.byte_end, chunk.body, chunk.prefix)
+    ChunkRecord::new(chunk.doc_id, chunk.byte_start, chunk.byte_end, chunk.body, chunk.prefix, chunk.metadata)
         .with_vector(chunk.chunk_id, chunk.vector)
 }
 
@@ -855,6 +876,7 @@ fn wal_chunk(record: &ChunkRecord) -> WalChunk {
         byte_end: record.byte_end,
         body: record.body.clone(),
         prefix: record.prefix.clone(),
+        metadata: record.metadata.clone(),
         vector: record.vector.clone(),
     }
 }

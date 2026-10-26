@@ -6,7 +6,9 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use gyrfalcon::{AnswerEvent, AnswerOptions, Document, Error, Hit, Index, IndexConfig, Quantization, RetrieveOptions};
+use gyrfalcon::{
+    AnswerEvent, AnswerOptions, Document, Error, Filter, Hit, Index, IndexConfig, Quantization, RetrieveOptions,
+};
 use serde_json::{json, Value};
 
 struct App {
@@ -101,11 +103,52 @@ fn hit_json(hit: &Hit, include_prefix: bool) -> Value {
         "score": hit.score,
         "byte_start": hit.byte_start,
         "byte_end": hit.byte_end,
+        "metadata": metadata_json(&hit.metadata),
     });
     if include_prefix {
         value["prefix"] = json!(hit.prefix);
     }
     value
+}
+
+/// Metadata as a JSON object: each key's value, or an array when the key repeats.
+fn metadata_json(pairs: &[(String, String)]) -> Value {
+    let mut object = serde_json::Map::new();
+    for (key, value) in pairs {
+        match object.get_mut(key) {
+            None => {
+                object.insert(key.clone(), json!(value));
+            }
+            Some(Value::Array(values)) => values.push(json!(value)),
+            Some(existing) => *existing = json!([existing.clone(), value]),
+        }
+    }
+    Value::Object(object)
+}
+
+/// `{"key": value or [values]}` as `(key, values)` clauses; values are strings, numbers, or
+/// booleans.
+type Clauses = Vec<(String, Vec<String>)>;
+
+fn clauses(value: Option<&Value>, what: &str) -> Result<Clauses, (u16, Value)> {
+    let Some(value) = value.filter(|v| !v.is_null()) else { return Ok(Vec::new()) };
+    let object = value.as_object().ok_or_else(|| bad_request(&format!("{what} must be an object")))?;
+    let text = |v: &Value| match v {
+        Value::String(s) => Ok(s.clone()),
+        Value::Number(n) => Ok(n.to_string()),
+        Value::Bool(b) => Ok(b.to_string()),
+        _ => Err(bad_request(&format!("{what} values are strings, numbers, or booleans"))),
+    };
+    object
+        .iter()
+        .map(|(key, value)| {
+            let values = match value {
+                Value::Array(values) => values.iter().map(text).collect::<Result<Vec<_>, _>>()?,
+                single => vec![text(single)?],
+            };
+            Ok((key.clone(), values))
+        })
+        .collect()
 }
 
 fn bad_request(message: &str) -> (u16, Value) {
@@ -181,7 +224,10 @@ fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Valu
                 let doc_id =
                     doc.get("doc_id").and_then(Value::as_str).ok_or_else(|| bad_request("doc_id is required"))?;
                 let text = doc.get("text").and_then(Value::as_str).ok_or_else(|| bad_request("text is required"))?;
-                let mut document = Document::body(doc_id, text);
+                let metadata = clauses(doc.get("metadata"), "metadata")?
+                    .into_iter()
+                    .flat_map(|(key, values)| values.into_iter().map(move |value| (key.clone(), value)));
+                let mut document = Document::body(doc_id, text).with_metadata(metadata);
                 document.contextual_prefix = doc.get("contextual_prefix").and_then(Value::as_bool).unwrap_or(false);
                 docs.push(document);
             }
@@ -205,8 +251,11 @@ fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Valu
                 limit: body.get("limit").and_then(Value::as_u64).unwrap_or(10) as usize,
             };
             let include_prefix = body.get("include_prefix").and_then(Value::as_bool).unwrap_or(false);
+            let filter = clauses(body.get("filter"), "filter")?
+                .into_iter()
+                .fold(Filter::new(), |f, (key, values)| f.any(key, values));
             let index = app.index.read().unwrap_or_else(|p| p.into_inner());
-            let hits = library(index.retrieve(query, opts))?;
+            let hits = library(index.retrieve_filtered(query, opts, Some(&filter)))?;
             Ok(json!({
                 "chunk_ids": hits.chunk_ids,
                 "hits": hits.hits.iter().map(|hit| hit_json(hit, include_prefix)).collect::<Vec<_>>(),

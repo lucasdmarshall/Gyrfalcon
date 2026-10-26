@@ -3,12 +3,13 @@
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
+use crate::filter::Filter;
 use crate::fuse::{rrf_weighted, score_fusion, Fusion};
 use crate::index::{Index, Snapshot};
 use crate::lexical::{CollectionStats, ScoredId};
-use crate::prepare::{prepare, Token};
+use crate::prepare::{prepare, PreparedText, Token};
 use crate::rerank::{NoopReranker, Reranker, RERANK_K};
-use crate::store::TermMap;
+use crate::store::{Excluded, Filtered, TermMap};
 use crate::vector::{Budget, DenseQuery, FallbackStep};
 
 /// Per-leg list length before fusion.
@@ -32,6 +33,8 @@ pub struct Hit {
     pub doc_id: String,
     pub body: String,
     pub prefix: Option<String>,
+    /// The document's metadata.
+    pub metadata: Vec<(String, String)>,
     pub byte_start: u64,
     pub byte_end: u64,
     /// RRF score, or the reranker score when rerank ran.
@@ -61,6 +64,16 @@ pub struct DenseHits {
 }
 
 pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -> Result<Vec<ScoredId>> {
+    lexical_leg_excluding(snapshot, tokens, limit, snapshot.tombstones.as_ref())
+}
+
+/// The lexical leg over every chunk `excluded` does not hold.
+pub(crate) fn lexical_leg_excluding(
+    snapshot: &Snapshot,
+    tokens: &[Token],
+    limit: usize,
+    excluded: &impl Excluded,
+) -> Result<Vec<ScoredId>> {
     // Collection doc freqs of the query terms only, summed over the segment dictionaries
     // and the write buffer.
     let terms = TermMap(tokens.iter().map(|t| (t.text.clone(), snapshot.doc_freq(&t.text))).collect());
@@ -68,10 +81,10 @@ pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -
     let stats = CollectionStats { num_docs, num_tokens, terms: &terms };
     let mut merged = Vec::new();
     for segment in &snapshot.segments {
-        merged.extend(segment.search_lexical(tokens, limit, &stats, &snapshot.tombstones)?);
+        merged.extend(segment.search_lexical(tokens, limit, &stats, excluded)?);
     }
     for batch in &snapshot.pending.batches {
-        merged.extend(batch.search_lexical(tokens, &stats, &snapshot.tombstones));
+        merged.extend(batch.search_lexical(tokens, &stats, excluded));
     }
     merged.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.chunk_id.cmp(&b.chunk_id)));
     merged.truncate(limit);
@@ -79,13 +92,23 @@ pub(crate) fn lexical_leg(snapshot: &Snapshot, tokens: &[Token], limit: usize) -
 }
 
 pub(crate) fn dense_leg(snapshot: &Snapshot, query: &DenseQuery, limit: usize) -> Result<DenseHits> {
+    dense_leg_excluding(snapshot, query, limit, snapshot.tombstones.as_ref())
+}
+
+/// The dense leg over every chunk `excluded` does not hold.
+pub(crate) fn dense_leg_excluding(
+    snapshot: &Snapshot,
+    query: &DenseQuery,
+    limit: usize,
+    excluded: &impl Excluded,
+) -> Result<DenseHits> {
     // Stages 1 and 2 per segment, then one exact rescore of the best estimates overall, so the
     // exact work does not grow with the segment count.
     let live: Vec<usize> = snapshot.live.iter().map(|count| *count as usize).collect();
     let budgets = Budget::split(limit, &live);
     let mut pool: Vec<(f32, usize, u32)> = Vec::new();
     for (index, (segment, budget)) in snapshot.segments.iter().zip(&budgets).enumerate() {
-        let found = segment.vector.candidates(query, *budget, &snapshot.tombstones, &segment.ids, live[index])?;
+        let found = segment.vector.candidates(query, *budget, excluded, &segment.ids, live[index])?;
         pool.extend(found.into_iter().map(|(row, estimate)| (estimate, index, row)));
     }
     let keep = Budget::refine_total(limit, live.iter().sum());
@@ -102,7 +125,7 @@ pub(crate) fn dense_leg(snapshot: &Snapshot, query: &DenseQuery, limit: usize) -
     }
     // The write buffer is small and scanned exactly.
     for batch in &snapshot.pending.batches {
-        merged.extend(batch.search_dense(query, &snapshot.tombstones));
+        merged.extend(batch.search_dense(query, excluded));
     }
     merged.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
     merged.truncate(limit);
@@ -120,6 +143,7 @@ pub(crate) fn hit_for(snapshot: &Snapshot, chunk_id: u64, score: f32) -> Result<
         doc_id: stored.doc_key,
         body: stored.body,
         prefix: stored.prefix,
+        metadata: stored.metadata,
         byte_start: stored.byte_start,
         byte_end: stored.byte_end,
         score,
@@ -130,22 +154,47 @@ impl Index {
     /// Prepares the query once, embeds `embed_text` once, runs both legs, fuses with RRF, and
     /// optionally reranks the top `rerank_k`.
     pub fn retrieve(&self, query: &str, opts: RetrieveOptions) -> Result<Hits> {
+        self.retrieve_filtered(query, opts, None)
+    }
+
+    /// `retrieve` over the chunks whose documents match `filter` (every chunk for `None` or an
+    /// empty filter).
+    pub fn retrieve_filtered(&self, query: &str, opts: RetrieveOptions, filter: Option<&Filter>) -> Result<Hits> {
         let prepared = prepare(query);
         if prepared.embed_text.is_empty() {
             return Err(Error::EmptyQuery);
         }
         let guard = self.acquire();
         let snapshot = guard.snapshot();
+        match filter.filter(|f| !f.is_empty()) {
+            None => self.retrieve_in(snapshot, query, &prepared, opts, snapshot.tombstones.as_ref()),
+            Some(filter) => {
+                let allowed = snapshot.matching(filter)?;
+                let excluded = Filtered { dead: &snapshot.tombstones, allowed: &allowed };
+                self.retrieve_in(snapshot, query, &prepared, opts, &excluded)
+            }
+        }
+    }
+
+    fn retrieve_in(
+        &self,
+        snapshot: &Snapshot,
+        query: &str,
+        prepared: &PreparedText,
+        opts: RetrieveOptions,
+        excluded: &impl Excluded,
+    ) -> Result<Hits> {
         let leg_limit = LEG_LIMIT.max(opts.limit);
 
         let (lexical, dense) = std::thread::scope(|scope| {
-            let lexical = scope.spawn(|| lexical_leg(snapshot, &prepared.tokens, leg_limit));
+            let lexical = scope.spawn(|| lexical_leg_excluding(snapshot, &prepared.tokens, leg_limit, excluded));
             let dense = (|| -> Result<DenseHits> {
                 let vectors = self.embedder.embed(std::slice::from_ref(&prepared.embed_text))?;
                 let vector =
                     vectors.into_iter().next().ok_or_else(|| Error::Embed("embedder returned nothing".into()))?;
                 self.check_width(vector.len())?;
-                dense_leg(snapshot, &DenseQuery::new(snapshot.manifest.quantization, &vector), leg_limit)
+                let query = DenseQuery::new(snapshot.manifest.quantization, &vector);
+                dense_leg_excluding(snapshot, &query, leg_limit, excluded)
             })();
             (lexical.join().unwrap_or_else(|_| Err(Error::Lexical("lexical leg panicked".into()))), dense)
         });

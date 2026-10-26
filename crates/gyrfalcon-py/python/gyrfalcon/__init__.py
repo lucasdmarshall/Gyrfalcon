@@ -3,10 +3,10 @@
     from gyrfalcon import Collection
 
     with Collection("./my-index") as col:          # lite tier: no runtime, fast on any CPU
-        col.add("intro", "Gyrfalcons are the largest falcons.")
-        col.add_path("docs/")                       # PDF, HTML, Markdown, text
-        for hit in col.search("largest falcon", k=5):
-            print(hit.score, hit.doc_id, hit.text[:80])
+        col.add("intro", "Gyrfalcons are the largest falcons.", metadata={"topic": "birds"})
+        col.add_path("docs/", metadata={"source": "docs"})   # PDF, HTML, Markdown, text
+        for hit in col.search("largest falcon", k=5, filter={"topic": ["birds", "raptors"]}):
+            print(hit.score, hit.doc_id, hit.metadata, hit.text[:80])
 
 Models download on first use into ``$GYR_MODELS`` (default ``~/.cache/gyrfalcon/models``).
 The full tier needs ONNX Runtime and PDFs need PDFium; both are found automatically when the
@@ -32,7 +32,32 @@ __all__ = ["Collection", "Hit", "read_file", "models_dir", "ensure_model", "supp
 __version__ = _native.__version__
 
 PathLike = Union[str, "os.PathLike[str]"]
+Metadata = Optional[Mapping[str, object]]
 _BATCH = 512
+
+
+def _pairs(metadata: Metadata) -> list:
+    """``{"tag": ["a", "b"], "year": 2024}`` as ``[("tag", "a"), ("tag", "b"), ("year", "2024")]``."""
+    pairs = []
+    for key, value in (metadata or {}).items():
+        values = value if isinstance(value, (list, tuple, set, frozenset)) else [value]
+        pairs.extend((str(key), _text(v)) for v in values)
+    return pairs
+
+
+def _clauses(filter: Metadata) -> list:
+    """``{"tag": ["a", "b"], "lang": "en"}`` as ``[("tag", ["a", "b"]), ("lang", ["en"])]``."""
+    clauses = []
+    for key, value in (filter or {}).items():
+        values = value if isinstance(value, (list, tuple, set, frozenset)) else [value]
+        clauses.append((str(key), [_text(v) for v in values]))
+    return clauses
+
+
+def _text(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def models_dir() -> Path:
@@ -135,17 +160,23 @@ class Collection:
     def tier(self) -> str:
         return self._native.tier
 
-    def add(self, doc_id: str, text: str) -> list:
-        """Indexes one document; returns its chunk ids. Use ``update`` to replace a document."""
-        return self._native.add(doc_id, text)
+    def add(self, doc_id: str, text: str, metadata: Metadata = None) -> list:
+        """Indexes one document; returns its chunk ids. Use ``update`` to replace a document.
 
-    def add_many(self, docs: Union[Mapping[str, str], Iterable[Tuple[str, str]]]) -> int:
-        """Indexes ``{doc_id: text}`` or ``(doc_id, text)`` pairs; returns the chunk count."""
-        pairs = docs.items() if isinstance(docs, Mapping) else docs
+        ``metadata`` maps keys to a value or a list of values (strings, numbers, booleans);
+        ``search`` can filter on them.
+        """
+        return self._native.add(doc_id, text, _pairs(metadata))
+
+    def add_many(self, docs: Union[Mapping[str, str], Iterable[tuple]]) -> int:
+        """Indexes ``{doc_id: text}``, ``(doc_id, text)`` pairs, or ``(doc_id, text, metadata)``
+        triples; returns the chunk count."""
+        items = docs.items() if isinstance(docs, Mapping) else docs
         chunks = 0
         batch = []
-        for doc_id, text in pairs:
-            batch.append((doc_id, text))
+        for item in items:
+            doc_id, text = item[0], item[1]
+            batch.append((doc_id, text, _pairs(item[2] if len(item) > 2 else None)))
             if len(batch) == _BATCH:
                 chunks += self._native.add_many(batch)
                 batch = []
@@ -153,19 +184,20 @@ class Collection:
             chunks += self._native.add_many(batch)
         return chunks
 
-    def add_file(self, path: PathLike, doc_id: Optional[str] = None) -> int:
+    def add_file(self, path: PathLike, doc_id: Optional[str] = None, metadata: Metadata = None) -> int:
         """Reads a PDF, HTML, or text file and indexes it; returns the chunk count."""
-        return self._native.add_file(os.fspath(path), doc_id)
+        return self._native.add_file(os.fspath(path), doc_id, _pairs(metadata))
 
-    def add_path(self, path: PathLike) -> dict:
-        """Indexes a file, or every supported file under a directory (hidden entries skipped).
+    def add_path(self, path: PathLike, metadata: Metadata = None) -> dict:
+        """Indexes a file, or every supported file under a directory (hidden entries skipped),
+        each with ``metadata``.
 
         Returns ``{"documents": n, "chunks": n, "skipped": [(path, reason), ...]}``.
         """
         report = {"documents": 0, "chunks": 0, "skipped": []}
         for file in _walk(Path(path)):
             try:
-                report["chunks"] += self.add_file(file)
+                report["chunks"] += self.add_file(file, metadata=metadata)
                 report["documents"] += 1
             except (RuntimeError, UnicodeDecodeError, OSError) as err:
                 if "PDFium unavailable" in str(err):
@@ -173,17 +205,21 @@ class Collection:
                 report["skipped"].append((str(file), str(err)))
         return report
 
-    def update(self, doc_id: str, text: str) -> int:
-        """Replaces a document's chunks atomically; returns the new chunk count."""
-        return self._native.update(doc_id, text)
+    def update(self, doc_id: str, text: str, metadata: Metadata = None) -> int:
+        """Replaces a document's chunks (and metadata) atomically; returns the new chunk count."""
+        return self._native.update(doc_id, text, _pairs(metadata))
 
     def delete(self, doc_id: str) -> int:
         """Removes a document; returns the number of chunks removed."""
         return self._native.delete(doc_id)
 
-    def search(self, query: str, k: int = 10) -> Sequence[Hit]:
-        """The best ``k`` chunks for ``query``, best first."""
-        return self._native.search(query, k)
+    def search(self, query: str, k: int = 10, filter: Metadata = None) -> Sequence[Hit]:
+        """The best ``k`` chunks for ``query``, best first.
+
+        ``filter`` keeps documents whose metadata has, for every key, the value or one of the
+        listed values: ``{"lang": "en", "tag": ["a", "b"]}`` is ``lang == en and tag in (a, b)``.
+        """
+        return self._native.search(query, k, _clauses(filter))
 
     def flush(self) -> None:
         """Seals buffered writes into a segment (they are already durable in the log)."""

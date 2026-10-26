@@ -31,7 +31,9 @@ use memmap2::Mmap;
 
 use crate::error::{Error, Result};
 use crate::manifest::Quantization;
+#[cfg(test)]
 use crate::store::Tombstones;
+use crate::store::{Excluded, RowMask};
 
 /// Rows kept by the Hamming prefilter, per requested hit, and at least `PREFILTER_MIN`.
 pub const PREFILTER_PER_HIT: usize = 80;
@@ -642,7 +644,7 @@ impl VectorSegment {
         &self,
         query: &DenseQuery,
         budget: Budget,
-        dead: &Tombstones,
+        dead: &impl Excluded,
         ids: &[u64],
         live_count: usize,
     ) -> Result<Vec<(u32, f32)>> {
@@ -652,26 +654,43 @@ impl VectorSegment {
         if ids.len() != self.rows || query.raw.len() != self.dimension {
             return Err(Error::Vector("query or ids disagree with the segment".into()));
         }
-        let mut dead_rows: Vec<usize> =
-            dead.in_range(ids[0], ids[self.rows - 1]).iter().filter_map(|id| ids.binary_search(id).ok()).collect();
-        dead_rows.sort_unstable();
+        let mask = dead.rows(ids);
 
         // The query in the rows' scale, centered like them.
         let values = row_values(self.quantization, &query.row);
         let centroid = self.centroid();
         let residual: Vec<f32> = values.iter().zip(centroid).map(|(v, c)| v - c).collect();
         let rotated = self.rotation.apply(&residual);
-        let survivors: Vec<u32> = if live_count <= budget.prefilter {
-            (0..self.rows).filter(|r| dead_rows.binary_search(r).is_err()).map(|r| r as u32).collect()
-        } else {
-            let bits = sign_bits(&rotated, self.words);
-            let mut distances = vec![0u16; self.rows];
-            // SAFETY: `kernels()` only returns functions this CPU supports.
-            unsafe { (kernels().hamming)(self.code_words(), self.words, &bits, &mut distances) };
-            for row in &dead_rows {
-                distances[*row] = u16::MAX;
+        let survivors: Vec<u32> = match &mask {
+            // Few enough searchable rows: every one goes on to the estimate.
+            RowMask::Only(rows) if rows.len() <= budget.prefilter => rows.iter().map(|&r| r as u32).collect(),
+            RowMask::Except(dead_rows) if live_count <= budget.prefilter => {
+                (0..self.rows).filter(|r| dead_rows.binary_search(r).is_err()).map(|r| r as u32).collect()
             }
-            cut(&distances, self.words * 64, budget.prefilter)
+            _ => {
+                let bits = sign_bits(&rotated, self.words);
+                let mut distances = vec![0u16; self.rows];
+                // SAFETY: `kernels()` only returns functions this CPU supports.
+                unsafe { (kernels().hamming)(self.code_words(), self.words, &bits, &mut distances) };
+                match &mask {
+                    RowMask::Except(dead_rows) => {
+                        for row in dead_rows {
+                            distances[*row] = u16::MAX;
+                        }
+                    }
+                    RowMask::Only(rows) => {
+                        let mut allowed = rows.iter().peekable();
+                        for (row, distance) in distances.iter_mut().enumerate() {
+                            if allowed.peek() == Some(&&row) {
+                                allowed.next();
+                            } else {
+                                *distance = u16::MAX;
+                            }
+                        }
+                    }
+                }
+                cut(&distances, self.words * 64, budget.prefilter)
+            }
         };
         let mut planes = PlaneQuery::new(&rotated);
         planes.offset =
@@ -710,7 +729,7 @@ impl VectorSegment {
         &self,
         query: &DenseQuery,
         limit: usize,
-        dead: &Tombstones,
+        dead: &impl Excluded,
         ids: &[u64],
         live_count: usize,
     ) -> Result<VectorHits> {

@@ -1161,6 +1161,7 @@ fn run_accuracy(
                     body: bodies.get(&key).cloned().unwrap_or_default(),
                     doc_id: key,
                     prefix: None,
+                    metadata: Vec::new(),
                     byte_start: 0,
                     byte_end: 0,
                     score: 0.0,
