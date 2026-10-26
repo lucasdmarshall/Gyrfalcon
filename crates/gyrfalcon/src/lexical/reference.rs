@@ -323,3 +323,44 @@ fn damaged_files_are_errors_not_panics() {
         std::fs::write(&path, &original).unwrap();
     }
 }
+
+#[test]
+fn pruned_search_equals_exhaustive_search_to_the_bit() {
+    let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+    for round in 0..6 {
+        // Long lists (small vocabularies over many docs) cross many 128-doc blocks.
+        let num_docs = [50, 1000, 5000, 3000, 20_000, 700][round];
+        let vocabulary = [10, 30, 400, 3000, 200, 15][round];
+        let chunks: Vec<ChunkRecord> = (0..num_docs)
+            .map(|i| {
+                let len = match rng.below(10) {
+                    0 => 0,
+                    1..=7 => 1 + rng.below(40),
+                    _ => 40 + rng.below(800),
+                };
+                let text: Vec<String> = (0..len).map(|_| rng.word(vocabulary)).collect();
+                plain(i * 3 + 1, &text.join(" "))
+            })
+            .collect();
+        let dir = tempfile::tempdir().unwrap();
+        let built = write(dir.path(), &chunks).unwrap();
+        let segment = LexicalSegment::open(dir.path()).unwrap();
+        let terms = segment.term_map();
+        let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
+        let stats = CollectionStats { num_docs, num_tokens: built.num_tokens.max(1), terms: &terms };
+        for query in 0..60 {
+            let len = 1 + rng.below(if query % 4 == 0 { 25 } else { 6 });
+            let text: Vec<String> = (0..len).map(|_| rng.word(vocabulary + 3)).collect();
+            let tokens = prepare(&text.join(" ")).tokens;
+            let dead_every = [0, 2, 5, 11][query % 4];
+            let dead =
+                Tombstones::from_ids(ids.iter().copied().filter(|id| dead_every > 0 && id % dead_every == 0).collect());
+            for limit in [1, 3, 10, 100, 1000] {
+                let pruned = segment.search(&tokens, limit, &stats, &dead, &ids).unwrap();
+                let exhaustive = segment.search_exhaustive(&tokens, limit, &stats, &dead, &ids).unwrap();
+                let bits = |hits: &[ScoredId]| hits.iter().map(|h| (h.chunk_id, h.score.to_bits())).collect::<Vec<_>>();
+                assert_eq!(bits(&pruned), bits(&exhaustive), "round {round} query {query} limit {limit}");
+            }
+        }
+    }
+}

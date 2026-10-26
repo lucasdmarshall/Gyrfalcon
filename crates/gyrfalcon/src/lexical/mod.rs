@@ -33,7 +33,9 @@ use crate::store::{TermMap, Tombstones};
 
 pub use build::{write, Built};
 use docstore::DocStore;
-use postings::{PostingList, BLOCK};
+use postings::PostingList;
+#[cfg(test)]
+use postings::BLOCK;
 
 const DICT_MAGIC: &[u8; 8] = b"GYRDICT1";
 const POSTINGS_MAGIC: &[u8; 8] = b"GYRPOST1";
@@ -272,7 +274,151 @@ impl LexicalSegment {
     /// The best `limit` live chunks by BM25 over the distinct query terms, sorted by score
     /// descending, then chunk id ascending. `ids` maps doc ordinals to chunk ids. A dead chunk
     /// never takes a slot.
+    ///
+    /// Document at a time with block-max MaxScore pruning. Terms are ordered by their list's
+    /// best possible contribution; once `limit` hits are held, the weakest terms whose bounds
+    /// sum to at most the worst held score cannot make a doc competitive alone, so only docs
+    /// holding a stronger term are visited, and the weak lists are probed by skip entries only
+    /// for docs that their block bounds say could still enter. A visited doc's score is summed
+    /// in the same term order as `search_exhaustive`, so scores and results are identical to
+    /// the bit; bounds carry a small slack so float rounding never prunes a doc that belongs.
     pub fn search(
+        &self,
+        tokens: &[Token],
+        limit: usize,
+        stats: &CollectionStats,
+        dead: &Tombstones,
+        ids: &[u64],
+    ) -> Result<Vec<ScoredId>> {
+        if tokens.is_empty() || limit == 0 || stats.num_docs == 0 || self.num_docs == 0 {
+            return Ok(Vec::new());
+        }
+        if ids.len() != self.num_docs as usize {
+            return Err(corrupt("ids.bin and the lexical index disagree on the doc count"));
+        }
+        let mut texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+        texts.sort_unstable();
+        texts.dedup();
+        let factors = length_factors(stats.num_tokens as f32 / stats.num_docs as f32);
+        let norms = &self.norms[8..];
+        let norm = |doc: u32| norms.get(doc as usize).copied().unwrap_or(u8::MAX);
+        let upper = |weight: f32, (max_tf, min_norm): (u32, u8)| {
+            let tf = max_tf as f32;
+            weight * (tf / (tf + factors[min_norm as usize])) * BOUND_SLACK
+        };
+
+        // The query's terms present here, in term order: the order scores are summed in.
+        let mut terms = Vec::with_capacity(texts.len());
+        for text in texts {
+            let Some(term) = self.find(text) else { continue };
+            let weight = idf(stats.terms.get(text), stats.num_docs) * (1.0 + K1);
+            let list = self.list(term)?;
+            let mut best = 0f32;
+            for block in 0..list.blocks() {
+                if let Some(skip) = list.skip(block) {
+                    best = best.max(upper(weight, (skip.max_tf, skip.min_norm)));
+                }
+            }
+            let cursor = postings::Cursor::new(list, &norm)?;
+            if best == 0.0 {
+                best = upper(weight, cursor.block_bound());
+            }
+            terms.push(TermScorer { cursor, weight, best });
+        }
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Weakest first; `weak[..essential]` are the non-essential terms.
+        let mut weak: Vec<usize> = (0..terms.len()).collect();
+        weak.sort_by(|&a, &b| terms[a].best.total_cmp(&terms[b].best));
+        let mut essential = 0;
+        let mut threshold = f32::NEG_INFINITY;
+
+        let mut heap: BinaryHeap<Reverse<Ranked>> = BinaryHeap::with_capacity(limit + 1);
+        let mut tfs = vec![0u32; terms.len()];
+        loop {
+            let doc = weak[essential..].iter().map(|&t| terms[t].cursor.doc()).min().unwrap_or(u32::MAX);
+            if doc == u32::MAX {
+                break;
+            }
+            if doc >= self.num_docs {
+                return Err(corrupt("a posting names a doc past the segment"));
+            }
+            let doc_norm = norm(doc);
+            let contribution = |weight: f32, tf: u32| {
+                let tf = tf as f32;
+                weight * (tf / (tf + factors[doc_norm as usize]))
+            };
+            tfs.fill(0);
+            let mut partial = 0f32;
+            for &t in &weak[essential..] {
+                let term = &terms[t];
+                if term.cursor.doc() == doc {
+                    tfs[t] = term.cursor.tf();
+                    partial += contribution(term.weight, tfs[t]);
+                }
+            }
+            let chunk_id = ids[doc as usize];
+            let mut competitive = !dead.contains(chunk_id);
+            if competitive && essential > 0 {
+                // Block bounds of the weak lists first, then probe them strongest first while
+                // the doc can still beat the worst held hit.
+                let mut rest: f32 = weak[..essential]
+                    .iter()
+                    .map(|&t| terms[t].cursor.bound_at(doc).map_or(0.0, |b| upper(terms[t].weight, b)))
+                    .sum();
+                for &t in weak[..essential].iter().rev() {
+                    if partial * BOUND_SLACK + rest <= threshold {
+                        competitive = false;
+                        break;
+                    }
+                    let term = &mut terms[t];
+                    rest -= term.cursor.bound_at(doc).map_or(0.0, |b| upper(term.weight, b));
+                    term.cursor.seek(doc, &norm)?;
+                    if term.cursor.doc() == doc {
+                        tfs[t] = term.cursor.tf();
+                        partial += contribution(term.weight, tfs[t]);
+                    }
+                }
+                competitive = competitive && partial * BOUND_SLACK > threshold;
+            }
+            if competitive {
+                let mut score = 0f32;
+                for (term, &tf) in terms.iter().zip(&tfs) {
+                    if tf > 0 {
+                        score += contribution(term.weight, tf);
+                    }
+                }
+                let candidate = Ranked(ScoredId { chunk_id, score });
+                if heap.len() < limit || heap.peek().is_some_and(|worst| candidate > worst.0) {
+                    if heap.len() == limit {
+                        heap.pop();
+                    }
+                    heap.push(Reverse(candidate));
+                    if heap.len() == limit {
+                        threshold = heap.peek().map_or(threshold, |worst| worst.0 .0.score);
+                        let mut sum = 0f32;
+                        essential = 0;
+                        while essential < weak.len() && sum + terms[weak[essential]].best <= threshold {
+                            sum += terms[weak[essential]].best;
+                            essential += 1;
+                        }
+                    }
+                }
+            }
+            for &t in &weak[essential..] {
+                if terms[t].cursor.doc() == doc {
+                    terms[t].cursor.advance(&norm)?;
+                }
+            }
+        }
+        Ok(heap.into_sorted_vec().into_iter().map(|Reverse(ranked)| ranked.0).collect())
+    }
+
+    /// `search` by scoring every posting of every query term, term at a time. The reference
+    /// the pruned search is tested against.
+    #[cfg(test)]
+    pub fn search_exhaustive(
         &self,
         tokens: &[Token],
         limit: usize,
@@ -339,6 +485,17 @@ impl LexicalSegment {
     pub fn all_stored(&self) -> Result<Vec<StoredChunk>> {
         self.docs.all()
     }
+}
+
+/// Bounds are inflated by this factor so that float rounding in a bound never prunes a doc
+/// whose exact score would enter.
+const BOUND_SLACK: f32 = 1.0 + 1e-4;
+
+/// One query term's cursor, BM25 weight (`idf * (1 + k1)`), and list-wide score bound.
+struct TermScorer<'a> {
+    cursor: postings::Cursor<'a>,
+    weight: f32,
+    best: f32,
 }
 
 /// Orders hits so that greater is better: higher score, then lower chunk id.
