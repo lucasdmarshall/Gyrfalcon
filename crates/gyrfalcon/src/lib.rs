@@ -25,6 +25,7 @@ mod retrieve;
 mod segment;
 mod static_embed;
 mod store;
+mod tier;
 mod tombstone;
 mod vector;
 mod wal;
@@ -55,5 +56,6 @@ pub use prepare::{analyze, prepare, prepare_with_prefix, tokenize, PreparedText,
 pub use rerank::{NoopReranker, OrtReranker, Reranker, ScriptedReranker, RERANK_K};
 pub use retrieve::{DenseHits, Hit, Hits, RetrieveOptions, LEG_LIMIT};
 pub use static_embed::{StaticEmbedder, STATIC_MAX_TOKENS};
+pub use tier::{ModelFile, Tier};
 pub use tombstone::DeleteReport;
 pub use vector::{FallbackStep, VectorSegment};

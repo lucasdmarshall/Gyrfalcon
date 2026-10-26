@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/gyrfalcon", "crates/gyrfalcon-ingest", "crates/gyr-cli"]
+members = ["crates/gyrfalcon", "crates/gyrfalcon-ingest", "crates/gyr-cli", "crates/gyrfalcon-py"]
+# The Python module builds through maturin (crates/gyrfalcon-py/pyproject.toml).
+default-members = ["crates/gyrfalcon", "crates/gyrfalcon-ingest", "crates/gyr-cli"]
 
 [workspace.package]
 edition = "2021"

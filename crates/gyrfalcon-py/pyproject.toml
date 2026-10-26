@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "gyrfalcon"
+version = "0.1.0"
+description = "Fast hybrid retrieval for RAG: BM25 and dense search in one Rust engine, quick even on small CPUs."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Indexing",
+]
+
+[project.optional-dependencies]
+# PDFium for PDF files: gyrfalcon uses the library pypdfium2 ships.
+pdf = ["pypdfium2>=4"]
+# ONNX Runtime for the full tier: gyrfalcon uses the library onnxruntime ships.
+full = ["onnxruntime>=1.20"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "gyrfalcon._native"
+features = ["extension-module"]

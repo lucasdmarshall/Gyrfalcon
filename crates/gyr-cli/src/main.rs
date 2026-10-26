@@ -107,19 +107,15 @@ struct TierDefaults {
 
 impl Tier {
     fn defaults(self) -> TierDefaults {
-        match self {
-            Tier::Lite => TierDefaults {
-                embedder: EmbedderKind::Static,
-                model_dir: "potion-retrieval-32M",
-                model_id: gyrfalcon::STATIC_MODEL_ID,
-                dense_alpha: gyrfalcon::RESCORE_DENSE_WEIGHT,
-            },
-            Tier::Full => TierDefaults {
-                embedder: EmbedderKind::Ort,
-                model_dir: "bge-small-en-v1.5-q8",
-                model_id: "Xenova/bge-small-en-v1.5-q8",
-                dense_alpha: gyrfalcon::FULL_RESCORE_DENSE_WEIGHT,
-            },
+        let (tier, embedder) = match self {
+            Tier::Lite => (gyrfalcon::Tier::Lite, EmbedderKind::Static),
+            Tier::Full => (gyrfalcon::Tier::Full, EmbedderKind::Ort),
+        };
+        TierDefaults {
+            embedder,
+            model_dir: tier.model_dir(),
+            model_id: tier.model_id(),
+            dense_alpha: tier.dense_weight(),
         }
     }
 }

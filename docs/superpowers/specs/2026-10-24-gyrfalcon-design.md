@@ -813,3 +813,19 @@ written from borrowed records. Indexing 100 PDFs (4,962 chunks, one buffer seal)
 Merges still re-analyze the stored text of every chunk they copy and hold the records of the
 whole merge at once, now about twice the text instead of thirty times; merging postings
 directly from the input segments would remove both.
+
+### Python package and library-level tiers (2026-10-26)
+
+`gyrfalcon::Tier` now owns what a tier means (model directory and files, model id, embedder,
+dense weight) and opens a collection with it; the CLI takes its defaults from it, so a
+collection made by the CLI opens from Python and the reverse.
+
+`crates/gyrfalcon-py` builds the `gyrfalcon` Python package with PyO3 and maturin (abi3, Python
+3.9+). `Collection(path, tier="lite")` offers `add`, `add_many`, `add_file`, `add_path`,
+`update`, `delete`, `search`, `flush`, and `close` (also as a context manager). Engine calls
+release the GIL; searches share a read lock and run in parallel, writes take the write lock.
+The Python layer downloads a tier's model files from Hugging Face on first use into
+`$GYR_MODELS` (default `~/.cache/gyrfalcon/models`) with `urllib`, so proxies set in the
+environment apply, and it points `ORT_DYLIB_PATH` and `GYR_PDFIUM` at the libraries the
+`onnxruntime` and `pypdfium2` packages ship when those are installed (extras `full` and `pdf`).
+Opening a lite collection from Python takes about 60 ms.

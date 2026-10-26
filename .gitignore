@@ -5,3 +5,5 @@
 /.data
 /bench/traces
 __pycache__/
+.pytest_cache/
+/crates/gyrfalcon-py/python/gyrfalcon/*.so
