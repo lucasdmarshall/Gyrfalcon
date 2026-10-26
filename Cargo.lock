@@ -810,6 +810,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "gyrfalcon",
+ "gyrfalcon-ingest",
  "serde_json",
  "tempfile",
 ]

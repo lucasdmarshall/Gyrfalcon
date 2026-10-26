@@ -34,16 +34,18 @@ pub fn pdfium() -> Result<&'static Pdfium> {
             for path in candidates() {
                 match Pdfium::bind_to_library(&path) {
                     Ok(bindings) => return Ok(Pdfium::new(bindings)),
-                    Err(err) => tried.push(format!("{}: {err}", path.display())),
+                    // A library that exists but does not load (wrong platform or version) says why.
+                    Err(err) if path.exists() => return Err(format!("{} does not load: {err:?}", path.display())),
+                    Err(_) => tried.push(path.display().to_string()),
                 }
             }
-            match Pdfium::bind_to_system_library() {
-                Ok(bindings) => Ok(Pdfium::new(bindings)),
-                Err(err) => {
-                    tried.push(format!("system library: {err}"));
-                    Err(format!("set GYR_PDFIUM to the PDFium library ({})", tried.join("; ")))
-                }
-            }
+            Pdfium::bind_to_system_library().map(Pdfium::new).map_err(|_| {
+                tried.push("the system library path".into());
+                format!(
+                    "library not found in {}; set GYR_PDFIUM to libpdfium (prebuilt: https://github.com/bblanchon/pdfium-binaries)",
+                    tried.join(", ")
+                )
+            })
         })
         .as_ref()
         .map_err(|message| Error::PdfiumUnavailable(message.clone()))

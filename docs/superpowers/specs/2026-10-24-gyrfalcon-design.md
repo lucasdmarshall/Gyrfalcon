@@ -387,7 +387,7 @@ The server does not fuse ranks, tokenize, or open USearch on its own. One proces
 
 | Command | Behavior |
 |---|---|
-| `gyr index` | create or open, then `index_documents` from files or stdin |
+| `gyr index` | create or open, then `index_documents` from files, directories (PDF, HTML, Markdown, text), or stdin |
 | `gyr query` | `retrieve` or `answer` for one query |
 | `gyr serve` | HTTP layer |
 | `gyr compact` | one synchronous tiered merge |
@@ -758,3 +758,34 @@ restores seal-per-write; the seal and merge tests use it.
 FiQA added one call at a time (`examples/profile_incremental`): 1 doc per call 44 s (0.77 ms
 per call; about 10 ms before), 10 per call 57 s to 18 s, 100 per call 8.8 s to 6.6 s. Calls of
 1,000 or more chunks seal directly as before.
+
+### File ingestion: `gyrfalcon-ingest` (2026-10-26)
+
+A RAG framework is handed PDFs and web pages, not text. The `gyrfalcon-ingest` crate turns a
+file into text by extension; `gyr index` takes files and directories (walked in path order,
+hidden entries skipped) and skips with a warning any file that fails to read.
+
+- **PDF** through PDFium, loaded at run time from `GYR_PDFIUM` (the library or its directory),
+  beside the executable, or the system library path; prebuilt libraries come from
+  bblanchon/pdfium-binaries. `gyr index` checks for it before creating a collection. Measured on
+  100 arXiv papers against Open RAG Bench's reference text (`bench/results/2026-10-26-pdf-extractors/`),
+  PDFium gives the best text (word F1 0.902 after one fix) at 3.4 ms of CPU per page; the best
+  pure-Rust extractor (unpdf) matches its text at 12.5 ms. Retrieval on the papers' 334 queries
+  does not separate the good extractors, so cost decided.
+- **The layout layer** (`layout.rs`, 0.15 ms per page) removes PDFium's U+0002 soft-hyphen
+  marker, control and Private Use glyphs, running headers, footers and page numbers (a line
+  among a page's first or last two that recurs, digits ignored, on 30% of pages and at least
+  3); rebuilds paragraphs from line lengths, sentence ends, and headings; joins paragraphs
+  across page breaks when the next page continues in lower case; and rejoins a word hyphenated
+  at a line end when the document spells it whole elsewhere. It returns the byte offset of each
+  page for citations.
+- **HTML** (`html.rs`) in one pass without a DOM: the title first, block elements as paragraph
+  breaks, `<pre>` verbatim, scripts, styles, navigation, and embedded media skipped, character
+  references decoded.
+- Markdown and other text files are read as they are.
+
+The chunker now looks for each cut (blank line, newline, sentence end) in the window's back half
+before the whole window. A blank line early in a window used to win, leaving a fragment and a
+next window that repeated most of this one; on the PDF queries nDCG@10 rose by 0.008 to 0.014,
+and BEIR lite did not move.
+

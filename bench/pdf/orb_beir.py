@@ -5,7 +5,7 @@
 ORB_DIR is Open RAG Bench's `pdf/arxiv` directory (corpus/, queries.json, qrels.json); IDS_FILE
 lists the papers extracted into TEXT_DIR as `{id}.txt`. Every extractor's text is cut into
 passages by the same rule as Gyrfalcon's chunker (a window of 2,048 bytes, cut at a blank line,
-else a newline, else ". "), so each passage is one chunk and the extractors differ only in the
+else a newline, else ". ", in the window's back half first), without its overlap, so each passage is one chunk and the extractors differ only in the
 text and line structure they produce.
 
 A query's relevant passages are those of its paper sharing at least half of the word trigrams of
@@ -19,8 +19,9 @@ import re
 import sys
 
 WINDOW = 2048
-# GYR_BACK_HALF=1 looks for each cut in the window's back half before the whole window.
-BACK_HALF = os.environ.get("GYR_BACK_HALF") == "1"
+# Like the chunker, look for each cut in the window's back half before the whole window;
+# GYR_BACK_HALF=0 searches the whole window at once (the chunker before 2026-10-26).
+BACK_HALF = os.environ.get("GYR_BACK_HALF", "1") == "1"
 WORD = re.compile(r"[a-z0-9]+")
 MATH = re.compile(r"\$\$.*?\$\$|\$[^$]*\$|\\\[.*?\\\]|\\\(.*?\\\)", re.S)
 COMMAND = re.compile(r"\\[a-zA-Z]+")

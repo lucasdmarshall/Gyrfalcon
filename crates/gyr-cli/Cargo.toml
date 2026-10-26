@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 gyrfalcon = { path = "../gyrfalcon" }
+gyrfalcon-ingest = { path = "../gyrfalcon-ingest" }
 clap = { version = "4", features = ["derive", "env"] }
 serde_json = "1"
 tempfile = "3"

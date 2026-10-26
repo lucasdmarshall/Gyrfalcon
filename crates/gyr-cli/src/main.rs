@@ -23,7 +23,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create or open a collection and index files (or stdin), then wait for the merger.
+    /// Create or open a collection and index files, directories (PDF, HTML, Markdown, and
+    /// text files under them), or stdin, then wait for the merger. PDFs need the PDFium
+    /// library: GYR_PDFIUM, beside the executable, or the system library path.
     Index {
         dir: PathBuf,
         files: Vec<PathBuf>,
@@ -286,28 +288,74 @@ impl ModelArgs {
     }
 }
 
-fn read_documents(files: &[PathBuf]) -> Result<Vec<Document>, Error> {
-    if files.is_empty() {
-        let mut text = String::new();
-        std::io::stdin().read_to_string(&mut text)?;
-        return Ok(vec![Document::body("stdin", text)]);
+/// The files to index: each named file, and the supported files under each named directory
+/// (hidden entries skipped), in path order.
+fn input_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Error> {
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)?
+            .flatten()
+            .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            if path.is_dir() {
+                walk(&path, out)?;
+            } else if gyrfalcon_ingest::is_supported(&path) {
+                out.push(path);
+            }
+        }
+        Ok(())
     }
-    files.iter().map(|path| Ok(Document::body(path.to_string_lossy(), std::fs::read_to_string(path)?))).collect()
+    let mut files = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            walk(path, &mut files)?;
+        } else {
+            files.push(path.clone());
+        }
+    }
+    Ok(files)
 }
 
 fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Index { dir, files, model } => {
+            let inputs = input_files(&files)?;
+            let pdf = |p: &PathBuf| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+            if inputs.iter().any(pdf) {
+                // Fail before creating the collection when no PDF could be read.
+                gyrfalcon_ingest::pdf::pdfium()
+                    .map_err(|err| std::io::Error::new(std::io::ErrorKind::NotFound, err.to_string()))?;
+            }
             let mut index = model.open(&dir, true)?;
-            let mut chunks = 0;
-            for doc in read_documents(&files)? {
+            let (mut chunks, mut documents, mut skipped) = (0, 0, 0);
+            if files.is_empty() {
+                let mut text = String::new();
+                std::io::stdin().read_to_string(&mut text)?;
+                chunks += index.index_documents(&[Document::body("stdin", text)])?.chunk_ids.len();
+                documents += 1;
+            }
+            for path in inputs {
+                let text = match gyrfalcon_ingest::read_file(&path) {
+                    Ok(extracted) => extracted.text,
+                    Err(err) => {
+                        eprintln!("skipped {}: {err}", path.display());
+                        skipped += 1;
+                        continue;
+                    }
+                };
+                let doc = Document::body(path.to_string_lossy(), text);
                 chunks += index.index_documents(std::slice::from_ref(&doc))?.chunk_ids.len();
+                documents += 1;
             }
             index.flush()?;
             index.wait_until_merge_idle();
             index.reap_now();
             let manifest = index.manifest();
             let report = serde_json::json!({
+                "documents": documents,
+                "skipped": skipped,
                 "chunks": chunks,
                 "epoch": manifest.epoch,
                 "segments": manifest.sealed_segments.len(),

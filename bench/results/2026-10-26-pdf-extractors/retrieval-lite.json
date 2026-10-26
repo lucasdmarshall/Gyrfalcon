@@ -1,0 +1,399 @@
+{
+  "datasets": [
+    {
+      "dataset": "reference",
+      "docs": 5257,
+      "docs_per_sec": 7959.689347178908,
+      "index_seconds": 0.660452911,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6616410037068722,
+          "ndcg_at_10": 0.6212565924086174,
+          "query_p50_ms": 2.0120519999999997,
+          "query_p99_ms": 7.537027,
+          "recall_at_100": 0.8950463791032656
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.7059488166524096,
+          "ndcg_at_10": 0.6501168339289034,
+          "query_p50_ms": 1.91694,
+          "query_p99_ms": 7.796514,
+          "recall_at_100": 0.9160574953988129
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.44848279631213755,
+          "ndcg_at_10": 0.43027104507739444,
+          "query_p50_ms": 1.773241,
+          "query_p99_ms": 6.768978,
+          "recall_at_100": 0.7615415813394856
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pdfium-layout",
+      "docs": 4291,
+      "docs_per_sec": 4725.868435181865,
+      "index_seconds": 0.907981265,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6774985742800113,
+          "ndcg_at_10": 0.6553460640555909,
+          "query_p50_ms": 2.170486,
+          "query_p99_ms": 7.76675,
+          "recall_at_100": 0.9362151877082542
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6738012071095902,
+          "ndcg_at_10": 0.65292950242445,
+          "query_p50_ms": 1.9857749999999998,
+          "query_p99_ms": 6.272018,
+          "recall_at_100": 0.9357312654428946
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.49038114247695075,
+          "ndcg_at_10": 0.47395995721720363,
+          "query_p50_ms": 1.931225,
+          "query_p99_ms": 5.819434,
+          "recall_at_100": 0.8331834547600383
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pdfium-u0002",
+      "docs": 4011,
+      "docs_per_sec": 5054.729392528935,
+      "index_seconds": 0.793514289,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6769532363843742,
+          "ndcg_at_10": 0.6619607460800537,
+          "query_p50_ms": 2.25667,
+          "query_p99_ms": 7.492234000000001,
+          "recall_at_100": 0.9259210460105884
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6811472293508218,
+          "ndcg_at_10": 0.6642611607494434,
+          "query_p50_ms": 1.763639,
+          "query_p99_ms": 7.094454,
+          "recall_at_100": 0.9305011383689941
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.464241754586066,
+          "ndcg_at_10": 0.46358165660229206,
+          "query_p50_ms": 1.800395,
+          "query_p99_ms": 7.061471,
+          "recall_at_100": 0.8260899769089272
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pypdfium2",
+      "docs": 4033,
+      "docs_per_sec": 4106.987214496656,
+      "index_seconds": 0.981985039,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6500154452998765,
+          "ndcg_at_10": 0.6395664664842307,
+          "query_p50_ms": 2.254873,
+          "query_p99_ms": 7.3550450000000005,
+          "recall_at_100": 0.9144624285264058
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.658187197034502,
+          "ndcg_at_10": 0.6454064291926462,
+          "query_p50_ms": 2.230337,
+          "query_p99_ms": 7.497623999999999,
+          "recall_at_100": 0.918534359851725
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.4536260811709912,
+          "ndcg_at_10": 0.45247564137393825,
+          "query_p50_ms": 2.277589,
+          "query_p99_ms": 6.553771,
+          "recall_at_100": 0.8040461057834206
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "unpdf",
+      "docs": 4368,
+      "docs_per_sec": 5245.103349291844,
+      "index_seconds": 0.832776727,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.677595998479232,
+          "ndcg_at_10": 0.6474319839676427,
+          "query_p50_ms": 2.4947179999999998,
+          "query_p99_ms": 7.849149999999999,
+          "recall_at_100": 0.9169011793263294
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.685021623419827,
+          "ndcg_at_10": 0.6542180709147778,
+          "query_p50_ms": 1.891657,
+          "query_p99_ms": 6.280461,
+          "recall_at_100": 0.9253121961205792
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.49540918163672654,
+          "ndcg_at_10": 0.4696592900528834,
+          "query_p50_ms": 2.0135270000000003,
+          "query_p99_ms": 7.697553,
+          "recall_at_100": 0.8343394712406688
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pdf_oxide",
+      "docs": 4441,
+      "docs_per_sec": 4638.094169862991,
+      "index_seconds": 0.957505354,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6769948198840418,
+          "ndcg_at_10": 0.6503494036248267,
+          "query_p50_ms": 2.627891,
+          "query_p99_ms": 8.055738999999999,
+          "recall_at_100": 0.9302959557076323
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6795718087634256,
+          "ndcg_at_10": 0.6522014285577267,
+          "query_p50_ms": 2.1959039999999996,
+          "query_p99_ms": 7.759291,
+          "recall_at_100": 0.9282892548236858
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.48027278775781757,
+          "ndcg_at_10": 0.4689679391976805,
+          "query_p50_ms": 1.9499549999999999,
+          "query_p99_ms": 6.469835,
+          "recall_at_100": 0.8255958321452334
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pdf-extract",
+      "docs": 4336,
+      "docs_per_sec": 3911.8605915228695,
+      "index_seconds": 1.108423958,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6624061401007509,
+          "ndcg_at_10": 0.6437793530938961,
+          "query_p50_ms": 2.641197,
+          "query_p99_ms": 8.255555,
+          "recall_at_100": 0.9177472436080221
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6752388080980898,
+          "ndcg_at_10": 0.6513062906885129,
+          "query_p50_ms": 2.08837,
+          "query_p99_ms": 7.529762,
+          "recall_at_100": 0.92198876057409
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.4865019960079839,
+          "ndcg_at_10": 0.4744709154309294,
+          "query_p50_ms": 2.021404,
+          "query_p99_ms": 7.609009,
+          "recall_at_100": 0.8250835450311496
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "oxidize-pdf",
+      "docs": 3907,
+      "docs_per_sec": 4187.840777839149,
+      "index_seconds": 0.932939003,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.649915644900675,
+          "ndcg_at_10": 0.6502547876286686,
+          "query_p50_ms": 1.9692479999999999,
+          "query_p99_ms": 7.673737,
+          "recall_at_100": 0.9165963610574388
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6640564109875488,
+          "ndcg_at_10": 0.6579317620840143,
+          "query_p50_ms": 1.764202,
+          "query_p99_ms": 7.745153,
+          "recall_at_100": 0.920996597381328
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.46416928048664563,
+          "ndcg_at_10": 0.46665852955440174,
+          "query_p50_ms": 1.863796,
+          "query_p99_ms": 7.733084000000001,
+          "recall_at_100": 0.8209647554707435
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pymupdf",
+      "docs": 4243,
+      "docs_per_sec": 4823.716381047292,
+      "index_seconds": 0.879612246,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6494356525045148,
+          "ndcg_at_10": 0.6358399155940997,
+          "query_p50_ms": 2.337248,
+          "query_p99_ms": 7.324815999999999,
+          "recall_at_100": 0.9319349636951277
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.659654500522764,
+          "ndcg_at_10": 0.6454250947769345,
+          "query_p50_ms": 1.9006120000000002,
+          "query_p99_ms": 7.1196660000000005,
+          "recall_at_100": 0.9326945443987679
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.47002661343978713,
+          "ndcg_at_10": 0.4562147750948228,
+          "query_p50_ms": 1.863841,
+          "query_p99_ms": 6.199352,
+          "recall_at_100": 0.8393674430587448
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "pypdf",
+      "docs": 4019,
+      "docs_per_sec": 4215.537492993085,
+      "index_seconds": 0.953377833,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6337764946297881,
+          "ndcg_at_10": 0.6340644947020962,
+          "query_p50_ms": 2.075202,
+          "query_p99_ms": 7.728945,
+          "recall_at_100": 0.9104139762525777
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6445870164433039,
+          "ndcg_at_10": 0.6392186690321278,
+          "query_p50_ms": 1.918132,
+          "query_p99_ms": 7.737889,
+          "recall_at_100": 0.90772226767504
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.44055698127554427,
+          "ndcg_at_10": 0.4412870976632819,
+          "query_p50_ms": 1.780579,
+          "query_p99_ms": 7.2850850000000005,
+          "recall_at_100": 0.8090273520820321
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "lopdf",
+      "docs": 4395,
+      "docs_per_sec": 5058.367751622289,
+      "index_seconds": 0.86885735,
+      "queries": 334,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.522603602319171,
+          "ndcg_at_10": 0.5033589243978704,
+          "query_p50_ms": 1.888661,
+          "query_p99_ms": 6.269468,
+          "recall_at_100": 0.7184239177148096
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.530652979754776,
+          "ndcg_at_10": 0.508505018230575,
+          "query_p50_ms": 1.9758639999999998,
+          "query_p99_ms": 7.4478349999999995,
+          "recall_at_100": 0.7206195435513115
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.40096592529227254,
+          "ndcg_at_10": 0.38088361890100403,
+          "query_p50_ms": 1.812614,
+          "query_p99_ms": 7.884403,
+          "recall_at_100": 0.6427423434061473
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "aa76e2fc0db1d34937eb0a6b54bff5a77859613a",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}
