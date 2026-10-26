@@ -187,3 +187,8 @@ Progress on 2026-10-26 (spec sections of the same date hold the numbers):
 Still open: pruned lexical search at scale, merges that copy postings instead of re-analyzing
 text (merges hold each merged chunk's record, about twice its text), multi-process PDF
 extraction (PDFium serializes on one core), and a stronger static model for the lite tier.
+
+Parked for v2 (2026-10-26): corpus distillation, a static table fitted to bge-small on a sample
+of each collection, designed in `docs/v2-beta/corpus-distillation.md` with a staged plan and kill
+criteria. Quality work on v1 stops here: after the 2026-10-26 sweep further tuning on these
+benchmarks would risk fitting them rather than users' data.
