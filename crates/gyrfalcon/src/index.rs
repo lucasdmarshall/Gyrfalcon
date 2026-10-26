@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::buffer::{Batch, Pending};
@@ -18,8 +18,11 @@ use crate::store::{self, Tombstones};
 use crate::vector::quantize;
 use crate::wal::{wal_path, Frame, Wal, WalChunk};
 
-/// Texts per `embed` call during ingest.
+/// Texts per `embed` call during ingest, at most.
 pub const EMBED_BATCH: usize = 32;
+/// Bytes of text per `embed` call during ingest, counting every text at the batch's longest:
+/// 32 texts up to 1 KB, 16 chunker windows of 2 KB.
+pub const EMBED_BATCH_BYTES: usize = 32 * 1024;
 
 /// The open segment seals when it reaches this many chunks.
 pub const SEAL_EVERY: usize = 100_000;
@@ -729,35 +732,55 @@ impl Index {
         Ok(records)
     }
 
-    /// Embeds `embed_text` in batches and stores the quantized rows. Batches run on every core;
-    /// an embedder that serializes internally (an ort session) simply takes turns.
+    /// Embeds `embed_text` in batches and stores the quantized rows. Texts are batched by
+    /// length, longest first: a padded model (ONNX) computes each batch at its longest text, so
+    /// similar lengths waste no padding, and `EMBED_BATCH_BYTES` bounds a batch's activations.
+    /// Batches run on every core; an embedder that serializes internally (an ort session)
+    /// simply takes turns. Each text gets the same vector in any batch.
     pub(crate) fn embed_records(&self, records: &mut [ChunkRecord]) -> Result<()> {
-        let threads = worker_threads();
-        if threads == 1 || records.len() <= EMBED_BATCH {
-            return self.embed_range(records);
-        }
-        let per_thread = records.len().div_ceil(threads).max(EMBED_BATCH);
-        std::thread::scope(|scope| {
-            let parts: Vec<_> =
-                records.chunks_mut(per_thread).map(|part| scope.spawn(move || self.embed_range(part))).collect();
-            parts
-                .into_iter()
-                .try_for_each(|part| part.join().map_err(|_| Error::Embed("embed thread panicked".into()))?)
-        })
-    }
-
-    fn embed_range(&self, records: &mut [ChunkRecord]) -> Result<()> {
-        for batch in records.chunks_mut(EMBED_BATCH) {
+        let mut order: Vec<usize> = (0..records.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(records[i].embed_text.len()));
+        let mut batches: Vec<(Vec<usize>, Vec<String>)> = Vec::new();
+        let mut start = 0;
+        while start < order.len() {
+            let longest = records[order[start]].embed_text.len().max(1);
+            let end = (start + (EMBED_BATCH_BYTES / longest).clamp(1, EMBED_BATCH)).min(order.len());
+            let rows = order[start..end].to_vec();
             // The records keep no copy of the text they were embedded from.
-            let texts: Vec<String> = batch.iter_mut().map(|r| std::mem::take(&mut r.embed_text)).collect();
-            let vectors = self.embedder.embed(&texts)?;
-            if vectors.len() != batch.len() {
-                return Err(Error::Embed(format!("{} vectors for {} texts", vectors.len(), batch.len())));
+            let texts = rows.iter().map(|&i| std::mem::take(&mut records[i].embed_text)).collect();
+            batches.push((rows, texts));
+            start = end;
+        }
+        let next = AtomicUsize::new(0);
+        let run = || -> Result<Vec<(usize, Vec<u8>)>> {
+            let mut out = Vec::new();
+            while let Some((rows, texts)) = batches.get(next.fetch_add(1, Ordering::Relaxed)) {
+                let vectors = self.embedder.embed(texts)?;
+                if vectors.len() != rows.len() {
+                    return Err(Error::Embed(format!("{} vectors for {} texts", vectors.len(), rows.len())));
+                }
+                for (&row, vector) in rows.iter().zip(vectors) {
+                    self.check_width(vector.len())?;
+                    out.push((row, quantize(self.shared.config.quantization, &vector)));
+                }
             }
-            for (record, vector) in batch.iter_mut().zip(vectors) {
-                self.check_width(vector.len())?;
-                record.vector = quantize(self.shared.config.quantization, &vector);
-            }
+            Ok(out)
+        };
+        let threads = worker_threads().min(batches.len());
+        let rows = if threads <= 1 {
+            run()?
+        } else {
+            std::thread::scope(|scope| -> Result<Vec<(usize, Vec<u8>)>> {
+                let workers: Vec<_> = (0..threads).map(|_| scope.spawn(run)).collect();
+                let mut rows = Vec::with_capacity(records.len());
+                for worker in workers {
+                    rows.extend(worker.join().map_err(|_| Error::Embed("embed thread panicked".into()))??);
+                }
+                Ok(rows)
+            })?
+        };
+        for (row, vector) in rows {
+            records[row].vector = vector;
         }
         Ok(())
     }
