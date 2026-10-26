@@ -4,7 +4,8 @@
 
 REFERENCE_DIR holds `{arxiv id}.json` (title, abstract, sections). For each extractor:
 
-- word F1: multiset overlap of lowercase alphanumeric words, extracted vs reference;
+- word F1: multiset overlap of prose words (two or more characters, not all digits), extracted
+  vs reference, after math is removed from the reference;
 - trigram recall: share of the reference's word trigrams found in the extraction, which drops
   when columns interleave, hyphenation splits words, or words run together;
 - pages/s and MB/s from the timing lines, and the files that failed.
@@ -19,16 +20,20 @@ import sys
 from collections import Counter
 
 WORD = re.compile(r"[a-z0-9]+")
+# The reference renders math as LaTeX, which no text extractor reproduces.
+MATH = re.compile(r"\$\$.*?\$\$|\$[^$]*\$|\\\[.*?\\\]|\\\(.*?\\\)", re.S)
+COMMAND = re.compile(r"\\[a-zA-Z]+")
 
 
 def words(text):
-    return WORD.findall(text.lower())
+    """Prose words: lowercase alphanumeric runs of two or more characters holding a letter."""
+    return [w for w in WORD.findall(text.lower()) if len(w) > 1 and not w.isdigit()]
 
 
 def reference(path):
     d = json.load(open(path))
     parts = [d.get("title", ""), d.get("abstract", "")] + [s.get("text", "") for s in d.get("sections", [])]
-    return "\n".join(parts)
+    return COMMAND.sub(" ", MATH.sub(" ", "\n".join(parts)))
 
 
 def scores(ref_words, got_words):
