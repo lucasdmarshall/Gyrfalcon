@@ -1,7 +1,8 @@
 //! Static (Model2Vec) embeddings: a token-to-vector table, mean-pooled. No transformer runs,
 //! so embedding costs a tokenizer pass and a few hundred additions per token.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use tokenizers::Tokenizer;
 
@@ -17,15 +18,40 @@ fn model_error(err: impl std::fmt::Display) -> Error {
     Error::ModelUnavailable(err.to_string())
 }
 
+/// The embeddings table. Little-endian f32 data, 4-byte aligned in the file, is mapped rather
+/// than read, so a process pays for the rows of the tokens it meets instead of the whole table
+/// (129 MB for potion-retrieval-32M), and starting a process reads nothing up front. Other
+/// dtypes are converted into memory.
+enum Table {
+    Mapped { map: memmap2::Mmap, start: usize, len: usize },
+    Owned(Vec<f32>),
+}
+
+impl Table {
+    fn floats(&self) -> &[f32] {
+        match self {
+            Table::Owned(floats) => floats,
+            Table::Mapped { map, start, len } => {
+                let bytes = &map[*start..*start + *len * 4];
+                // SAFETY: `from_dir` checked that the range is in the file, 4-byte aligned, and
+                // little-endian f32 data on a little-endian target; every bit pattern is an f32.
+                unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast::<f32>(), *len) }
+            }
+        }
+    }
+}
+
 /// A Model2Vec model directory: `config.json`, `model.safetensors`, `tokenizer.json`.
 pub struct StaticEmbedder {
-    tokenizer: Tokenizer,
+    tokenizer_path: PathBuf,
+    /// Built on first use when `fast` handles most text, at once otherwise.
+    tokenizer: OnceLock<Tokenizer>,
     /// Allocation-free path for BERT WordPiece tokenizers; `None` uses `tokenizer` alone.
     fast: Option<crate::wordpiece::FastWordPiece>,
     /// Characters kept per text: `STATIC_MAX_TOKENS * median vocabulary token length`.
     max_chars: usize,
     /// Row-major `[vocab, dimension]`.
-    table: Vec<f32>,
+    table: Table,
     dimension: usize,
     normalize: bool,
     unk_id: Option<u32>,
@@ -33,6 +59,13 @@ pub struct StaticEmbedder {
 }
 
 /// The `embeddings` tensor header of a safetensors file: dtype, shape, and byte range.
+fn load_tokenizer(path: &Path) -> Result<Tokenizer> {
+    let mut tokenizer = Tokenizer::from_file(path).map_err(model_error)?;
+    tokenizer.with_padding(None);
+    tokenizer.with_truncation(None).map_err(model_error)?;
+    Ok(tokenizer)
+}
+
 fn embeddings_header(bytes: &[u8]) -> Result<(String, Vec<usize>, usize, usize)> {
     if bytes.len() < 8 {
         return Err(model_error("model.safetensors is truncated"));
@@ -52,7 +85,7 @@ fn embeddings_header(bytes: &[u8]) -> Result<(String, Vec<usize>, usize, usize)>
     let offsets = tensor["data_offsets"].as_array().ok_or_else(|| model_error("tensor has no data_offsets"))?;
     let start = 8 + header_len + offsets[0].as_u64().unwrap_or(0) as usize;
     let end = 8 + header_len + offsets[1].as_u64().unwrap_or(0) as usize;
-    if shape.len() != 2 || end > bytes.len() {
+    if shape.len() != 2 || start > end || end > bytes.len() {
         return Err(model_error("embeddings tensor must be 2-D and inside the file"));
     }
     Ok((dtype, shape, start, end))
@@ -110,32 +143,45 @@ impl StaticEmbedder {
             Err(_) => serde_json::json!({}),
         };
         let normalize = config["normalize"].as_bool().unwrap_or(true);
-        let mut tokenizer = Tokenizer::from_file(dir.join("tokenizer.json")).map_err(model_error)?;
-        tokenizer.with_padding(None);
-        tokenizer.with_truncation(None).map_err(model_error)?;
-        let bytes = std::fs::read(dir.join("model.safetensors")).map_err(model_error)?;
-        let (dtype, shape, start, end) = embeddings_header(&bytes)?;
-        let data = &bytes[start..end];
-        let table: Vec<f32> = match dtype.as_str() {
-            "F32" => data.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect(),
-            "F16" => data.chunks_exact(2).map(|b| f16_to_f32(u16::from_le_bytes([b[0], b[1]]))).collect(),
-            other => return Err(model_error(format!("unsupported embeddings dtype {other}"))),
-        };
-        if table.len() != shape[0] * shape[1] {
+        let file = std::fs::File::open(dir.join("model.safetensors")).map_err(model_error)?;
+        // SAFETY: the model file is not modified while the process runs, as with segments.
+        let map = unsafe { memmap2::Mmap::map(&file) }.map_err(model_error)?;
+        let (dtype, shape, start, end) = embeddings_header(&map)?;
+        let len = shape[0] * shape[1];
+        let data = &map[start..end];
+        if data.len() != len * if dtype == "F16" { 2 } else { 4 } {
             return Err(model_error("embeddings tensor size does not match its shape"));
         }
-        let unk_id = tokenizer.token_to_id("[UNK]");
-        let json: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("tokenizer.json"))?)?;
-        let fast = crate::wordpiece::FastWordPiece::from_tokenizer_json(&json);
-        // `int(np.median([len(token) for token in tokens]))`, lengths in characters.
-        let mut lengths: Vec<usize> = tokenizer.get_vocab(true).keys().map(|t| t.chars().count()).collect();
-        lengths.sort_unstable();
-        let median = match lengths.len() {
-            0 => 1,
-            n if n % 2 == 1 => lengths[n / 2],
-            n => (lengths[n / 2 - 1] + lengths[n / 2]) / 2,
+        let table = match dtype.as_str() {
+            "F32" if cfg!(target_endian = "little") && (data.as_ptr() as usize).is_multiple_of(4) => {
+                Table::Mapped { map, start, len }
+            }
+            "F32" => Table::Owned(data.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()),
+            "F16" => Table::Owned(data.chunks_exact(2).map(|b| f16_to_f32(u16::from_le_bytes([b[0], b[1]]))).collect()),
+            other => return Err(model_error(format!("unsupported embeddings dtype {other}"))),
+        };
+        let tokenizer_path = dir.join("tokenizer.json");
+        let fast = crate::wordpiece::FastWordPiece::from_tokenizer_json(&std::fs::read(&tokenizer_path)?);
+        let tokenizer = OnceLock::new();
+        let (unk_id, median) = match &fast {
+            Some(fast) => (fast.unk_literal, fast.median_token_chars),
+            None => {
+                let loaded = load_tokenizer(&tokenizer_path)?;
+                // `int(np.median([len(token) for token in tokens]))`, lengths in characters.
+                let mut lengths: Vec<usize> = loaded.get_vocab(true).keys().map(|t| t.chars().count()).collect();
+                lengths.sort_unstable();
+                let median = match lengths.len() {
+                    0 => 1,
+                    n if n % 2 == 1 => lengths[n / 2],
+                    n => (lengths[n / 2 - 1] + lengths[n / 2]) / 2,
+                };
+                let unk_id = loaded.token_to_id("[UNK]");
+                let _ = tokenizer.set(loaded);
+                (unk_id, median)
+            }
         };
         Ok(StaticEmbedder {
+            tokenizer_path,
             tokenizer,
             fast,
             max_chars: STATIC_MAX_TOKENS * median.max(1),
@@ -155,16 +201,26 @@ impl StaticEmbedder {
             None => text,
         };
         let mut ids = Vec::with_capacity(cut.len() / 4);
+        let full = |text: &str, ids: &mut Vec<u32>| -> Result<()> {
+            let encoding = self.tokenizer()?.encode(text, false).map_err(|e| Error::Embed(e.to_string()))?;
+            ids.extend_from_slice(encoding.get_ids());
+            Ok(())
+        };
         match &self.fast {
-            Some(fast) => fast
-                .encode(cut, &self.tokenizer, &mut ids, STATIC_MAX_TOKENS)
-                .map_err(|e| Error::Embed(e.to_string()))?,
-            None => ids.extend_from_slice(
-                self.tokenizer.encode(cut, false).map_err(|e| Error::Embed(e.to_string()))?.get_ids(),
-            ),
+            Some(fast) => fast.encode(cut, full, &mut ids, STATIC_MAX_TOKENS)?,
+            None => full(cut, &mut ids)?,
         }
         ids.truncate(STATIC_MAX_TOKENS);
         Ok(ids)
+    }
+
+    fn tokenizer(&self) -> Result<&Tokenizer> {
+        if let Some(tokenizer) = self.tokenizer.get() {
+            return Ok(tokenizer);
+        }
+        // Two threads may both load it; one copy is kept.
+        let _ = self.tokenizer.set(load_tokenizer(&self.tokenizer_path)?);
+        Ok(self.tokenizer.get().expect("set above"))
     }
 
     fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
@@ -172,11 +228,12 @@ impl StaticEmbedder {
     }
 
     fn pool(&self, ids: &[u32]) -> Vec<f32> {
+        let table = self.table.floats();
         let mut out = vec![0f32; self.dimension];
         let mut count = 0usize;
         for id in ids.iter().filter(|id| Some(**id) != self.unk_id) {
             let start = *id as usize * self.dimension;
-            let Some(row) = self.table.get(start..start + self.dimension) else { continue };
+            let Some(row) = table.get(start..start + self.dimension) else { continue };
             for (o, v) in out.iter_mut().zip(row) {
                 *o += v;
             }
