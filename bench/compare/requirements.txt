@@ -1,0 +1,13 @@
+# The head-to-head environment. Pinned where the published results recorded a version
+# (bench/compare/README.md); the rest resolve to versions compatible with those pins.
+fastembed==0.9.1
+model2vec==0.10.0
+llama-index-core==0.14.25
+llama-index-retrievers-bm25
+langchain-core==1.7.0
+langchain-classic==1.0.8
+langchain-community
+rank_bm25
+haystack-ai==3.4.1
+psutil
+numpy

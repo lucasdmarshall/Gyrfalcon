@@ -1,0 +1,166 @@
+{
+  "datasets": [
+    {
+      "dataset": "scifact",
+      "docs": 5183,
+      "docs_per_sec": 13594.344146427144,
+      "index_seconds": 0.381261497,
+      "queries": 300,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.674074074074074,
+          "ndcg_at_10": 0.7088063289765038,
+          "query_p50_ms": 1.848779,
+          "query_p99_ms": 5.396929,
+          "recall_at_100": 0.9282222222222223
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "nfcorpus",
+      "docs": 3633,
+      "docs_per_sec": 11813.76392336056,
+      "index_seconds": 0.307522651,
+      "queries": 323,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5494348616639639,
+          "ndcg_at_10": 0.34352287346135096,
+          "query_p50_ms": 1.507627,
+          "query_p99_ms": 2.383398,
+          "recall_at_100": 0.2888999637710271
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "arguana",
+      "docs": 8674,
+      "docs_per_sec": 18816.406387868436,
+      "index_seconds": 0.46098069,
+      "queries": 1406,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.4046428006954321,
+          "ndcg_at_10": 0.49122865489132983,
+          "query_p50_ms": 2.10592,
+          "query_p99_ms": 4.123013,
+          "recall_at_100": 0.9679943100995733
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "fiqa",
+      "docs": 57638,
+      "docs_per_sec": 29794.27698410309,
+      "index_seconds": 1.934532596,
+      "queries": 648,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.31838563100137174,
+          "ndcg_at_10": 0.26586065675741455,
+          "query_p50_ms": 2.705581,
+          "query_p99_ms": 4.118133,
+          "recall_at_100": 0.5513896425933461
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "trec-covid",
+      "docs": 171332,
+      "docs_per_sec": 13205.318029534383,
+      "index_seconds": 12.974469802,
+      "queries": 50,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.9283333333333332,
+          "ndcg_at_10": 0.6797374399089415,
+          "query_p50_ms": 3.0533740000000003,
+          "query_p99_ms": 85.19644699999999,
+          "recall_at_100": 0.11103000493172673
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "scidocs",
+      "docs": 25657,
+      "docs_per_sec": 23345.820033425516,
+      "index_seconds": 1.098997592,
+      "queries": 1000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.28055198412698384,
+          "ndcg_at_10": 0.16458821003880317,
+          "query_p50_ms": 2.276387,
+          "query_p99_ms": 4.259433,
+          "recall_at_100": 0.3607833333333324
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "quora",
+      "docs": 522931,
+      "docs_per_sec": 71145.41040483475,
+      "index_seconds": 7.350171951,
+      "queries": 10000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.8299372619047579,
+          "ndcg_at_10": 0.8343980230480278,
+          "query_p50_ms": 5.733583,
+          "query_p99_ms": 9.666937,
+          "recall_at_100": 0.9781017915071374
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "webis-touche2020",
+      "docs": 382545,
+      "docs_per_sec": 8675.649405841528,
+      "index_seconds": 44.094105479,
+      "queries": 49,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5429381276320051,
+          "ndcg_at_10": 0.3183052541357152,
+          "query_p50_ms": 5.365052,
+          "query_p99_ms": 237.288963,
+          "recall_at_100": 0.5534031797094919
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "d3dd62bbe23f680542a378d9c0565e7929c6cc0e",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}
