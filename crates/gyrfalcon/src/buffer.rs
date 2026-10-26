@@ -83,14 +83,12 @@ impl Batch {
         if tokens.is_empty() || stats.num_docs == 0 {
             return Vec::new();
         }
-        let mut terms: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
-        terms.sort_unstable();
-        terms.dedup();
+        let terms = lexical::query_terms(tokens);
         let factors = lexical::length_factors(stats.num_tokens as f32 / stats.num_docs as f32);
         let mut scores = vec![0f32; self.records.len()];
-        for text in terms {
+        for (text, repeats) in terms {
             let Some(list) = self.postings.get(text) else { continue };
-            let weight = lexical::idf(stats.terms.get(text), stats.num_docs) * (1.0 + lexical::K1);
+            let weight = repeats * lexical::idf(stats.terms.get(text), stats.num_docs) * (1.0 + lexical::K1);
             for &(row, tf) in list {
                 let tf = tf as f32;
                 scores[row as usize] += weight * (tf / (tf + factors[self.norms[row as usize] as usize]));

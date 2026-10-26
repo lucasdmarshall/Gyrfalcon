@@ -10,6 +10,10 @@ pub const RESCORE_DENSE_WEIGHT: f32 = 0.4;
 /// The dense share for bge-small-en-v1.5 (the full tier), chosen and confirmed the same way
 /// over SciFact, NFCorpus, ArguAna, and Open RAG Bench.
 pub const FULL_RESCORE_DENSE_WEIGHT: f32 = 0.65;
+/// The lite tier's dense share of `Fusion::RescoreMax`: the best mean validation nDCG@10 over
+/// the tuning sets, confirmed on their test halves and on four held-out BEIR sets (spec "Lite
+/// fusion and query term counts").
+pub const LITE_DENSE_WEIGHT: f32 = 0.45;
 
 /// Sums `weight / (60 + rank)` over both legs, rank starting at 1. A hit missing from a leg
 /// adds 0. Sorted by score descending, then chunk id ascending.
@@ -46,11 +50,27 @@ pub enum Fusion {
     /// `Score`, but every candidate from either leg gets its exact cosine similarity from the
     /// stored vector, so a lexical-only hit is not penalized on the dense side.
     Rescore { dense_weight: f32 },
+    /// `Rescore` with BM25 divided by the query's best BM25 score (not min-max stretched) and
+    /// raw cosine similarity.
+    RescoreMax { dense_weight: f32 },
 }
 
 impl Default for Fusion {
+    /// The lite tier's fusion.
     fn default() -> Self {
-        Fusion::Rescore { dense_weight: RESCORE_DENSE_WEIGHT }
+        Fusion::RescoreMax { dense_weight: LITE_DENSE_WEIGHT }
+    }
+}
+
+impl Fusion {
+    /// This fusion with another dense share; RRF has none.
+    pub fn with_dense_weight(self, dense_weight: f32) -> Fusion {
+        match self {
+            Fusion::Rrf => Fusion::Rrf,
+            Fusion::Score { .. } => Fusion::Score { dense_weight },
+            Fusion::Rescore { .. } => Fusion::Rescore { dense_weight },
+            Fusion::RescoreMax { .. } => Fusion::RescoreMax { dense_weight },
+        }
     }
 }
 
@@ -60,6 +80,21 @@ fn min_max(values: &mut [(u64, f32)]) {
     for (_, value) in values.iter_mut() {
         *value = if max > min { (*value - min) / (max - min) } else { 1.0 };
     }
+}
+
+/// `(1 - dense_weight) * bm25 / max_bm25 + dense_weight * cosine` over every candidate with a
+/// similarity; a candidate the lexical leg did not return scores 0 there. Sorted by score
+/// descending, then chunk id ascending.
+pub fn max_fusion(lexical: &[(u64, f32)], sims: &[(u64, f32)], dense_weight: f32) -> Vec<(u64, f32)> {
+    let top = lexical.iter().map(|(_, s)| *s).fold(0f32, f32::max);
+    let lexical: std::collections::HashMap<u64, f32> =
+        lexical.iter().map(|(id, s)| (*id, if top > 0.0 { s / top } else { 0.0 })).collect();
+    let mut out: Vec<(u64, f32)> = sims
+        .iter()
+        .map(|(id, sim)| (*id, (1.0 - dense_weight) * lexical.get(id).copied().unwrap_or(0.0) + dense_weight * sim))
+        .collect();
+    out.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    out
 }
 
 /// Mixes normalized lexical scores and dense similarities. Sorted by score descending, then

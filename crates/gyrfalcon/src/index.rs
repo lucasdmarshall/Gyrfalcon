@@ -524,7 +524,7 @@ impl Index {
             seal_every: SEAL_EVERY,
             write_buffer: WRITE_BUFFER,
             rrf_weights: [crate::fuse::LEXICAL_WEIGHT, crate::fuse::DENSE_WEIGHT],
-            fusion: crate::fuse::Fusion::Rescore { dense_weight: crate::fuse::RESCORE_DENSE_WEIGHT },
+            fusion: crate::fuse::Fusion::default(),
             auto_merge: true,
             pause_merge_after_copy: false,
             deleter_fail_times: 0,

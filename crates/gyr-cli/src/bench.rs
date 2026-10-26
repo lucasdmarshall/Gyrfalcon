@@ -848,6 +848,7 @@ fn parse_fusion(spec: &str, configured: Fusion) -> Result<([f32; 2], Fusion), Er
         None if spec == "dense" => ([0.0, 1.0], Fusion::Rrf),
         Some(("score", w)) => ([1.0, 1.0], Fusion::Score { dense_weight: weight(w)? }),
         Some(("rescore", w)) => ([1.0, 1.0], Fusion::Rescore { dense_weight: weight(w)? }),
+        Some(("rescoremax", w)) => ([1.0, 1.0], Fusion::RescoreMax { dense_weight: weight(w)? }),
         _ => return Err(other(format!("unknown fusion {spec}"))),
     })
 }

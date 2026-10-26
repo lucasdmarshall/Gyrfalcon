@@ -1,0 +1,119 @@
+{
+  "datasets": [
+    {
+      "dataset": "scifact",
+      "docs": 5183,
+      "docs_per_sec": 25.81627063728746,
+      "index_seconds": 200.764861541,
+      "queries": 300,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.7053174603174601,
+          "ndcg_at_10": 0.7430389542124983,
+          "query_p50_ms": 8.476825999999999,
+          "query_p99_ms": 13.370583,
+          "recall_at_100": 0.9683333333333334
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6485330687830688,
+          "ndcg_at_10": 0.6838477615583588,
+          "query_p50_ms": 8.159884,
+          "query_p99_ms": 12.239986,
+          "recall_at_100": 0.9215555555555557
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.6816097883597885,
+          "ndcg_at_10": 0.7152348693982531,
+          "query_p50_ms": 7.456982,
+          "query_p99_ms": 11.909051999999999,
+          "recall_at_100": 0.95
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "nfcorpus",
+      "docs": 3633,
+      "docs_per_sec": 24.926132587375655,
+      "index_seconds": 145.750648933,
+      "queries": 323,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5628642685144235,
+          "ndcg_at_10": 0.3607632176531484,
+          "query_p50_ms": 6.050575,
+          "query_p99_ms": 8.746595,
+          "recall_at_100": 0.30987255884566883
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.5249987714384,
+          "ndcg_at_10": 0.32187677266232373,
+          "query_p50_ms": 5.632388000000001,
+          "query_p99_ms": 7.911804999999999,
+          "recall_at_100": 0.2844746624134168
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.531906973315642,
+          "ndcg_at_10": 0.3394378764418121,
+          "query_p50_ms": 5.485444,
+          "query_p99_ms": 7.794405,
+          "recall_at_100": 0.3020607475479716
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "arguana",
+      "docs": 8674,
+      "docs_per_sec": 51.99778657958589,
+      "index_seconds": 166.814792909,
+      "queries": 1406,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5279767549504398,
+          "ndcg_at_10": 0.6114793097063801,
+          "query_p50_ms": 30.119459000000003,
+          "query_p99_ms": 63.212106000000006,
+          "recall_at_100": 0.9871977240398293
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.3934385513332876,
+          "ndcg_at_10": 0.48231013282022495,
+          "query_p50_ms": 29.546746,
+          "query_p99_ms": 70.214419,
+          "recall_at_100": 0.9580369843527738
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.5115437806227286,
+          "ndcg_at_10": 0.5922129144616947,
+          "query_p50_ms": 33.651304,
+          "query_p99_ms": 99.609106,
+          "recall_at_100": 0.9836415362731152
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 384,
+    "git_revision": "17f7bf3f38209be89f52281ea6151a274fb4e70d",
+    "model_id": "Xenova/bge-small-en-v1.5-q8",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}

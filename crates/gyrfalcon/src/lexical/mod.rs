@@ -46,6 +46,16 @@ const DICT_ENTRY: usize = 17;
 pub(crate) const K1: f32 = 1.2;
 const B: f32 = 0.75;
 
+/// The query's distinct terms in order, each with how often the query repeats it. A term's
+/// BM25 contribution is multiplied by its count, as summing a repeated clause does in Lucene
+/// and Tantivy; long queries (an argument, a paragraph) rank better for it (ArguAna BM25
+/// nDCG@10 0.403 to 0.482, spec "Lite fusion and query term counts").
+pub(crate) fn query_terms(tokens: &[Token]) -> Vec<(&str, f32)> {
+    let mut terms: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+    terms.sort_unstable();
+    terms.chunk_by(|a, b| a == b).map(|run| (run[0], run.len() as f32)).collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScoredId {
     pub chunk_id: u64,
@@ -305,9 +315,7 @@ impl LexicalSegment {
         if ids.len() != self.num_docs as usize {
             return Err(corrupt("ids.bin and the lexical index disagree on the doc count"));
         }
-        let mut terms: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
-        terms.sort_unstable();
-        terms.dedup();
+        let terms = query_terms(tokens);
         let factors = length_factors(stats.num_tokens as f32 / stats.num_docs as f32);
         let norms = &self.norms[8..];
 
@@ -316,9 +324,9 @@ impl LexicalSegment {
         let mut scores = vec![0f32; self.num_docs as usize];
         let mut touched: Vec<u32> = Vec::new();
         let (mut docs, mut tfs) = ([0u32; BLOCK], [0u32; BLOCK]);
-        for text in terms {
+        for (text, repeats) in terms {
             let Some(term) = self.find(text) else { continue };
-            let weight = idf(stats.terms.get(text), stats.num_docs) * (1.0 + K1);
+            let weight = repeats * idf(stats.terms.get(text), stats.num_docs) * (1.0 + K1);
             let list = self.list(term)?;
             for block in 0..list.blocks() {
                 let len = list.decode(block, &mut docs, &mut tfs)?;

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 use crate::filter::Filter;
-use crate::fuse::{rrf_weighted, score_fusion, Fusion};
+use crate::fuse::{max_fusion, rrf_weighted, score_fusion, Fusion};
 use crate::index::{Index, Snapshot};
 use crate::lexical::{CollectionStats, ScoredId};
 use crate::prepare::{prepare, PreparedText, Token};
@@ -200,35 +200,38 @@ impl Index {
         });
         let lexical = lexical?;
         let dense = dense?;
-        let fused = match self.fusion {
+        let lexical_scores: Vec<(u64, f32)> = lexical.iter().map(|hit| (hit.chunk_id, hit.score)).collect();
+        // Exact similarity of every candidate from either leg to `query`.
+        let sims_of = |query: &[f32], dense_ids: &[u64]| -> Vec<(u64, f32)> {
+            let mut candidates: Vec<u64> =
+                lexical_scores.iter().map(|(id, _)| *id).chain(dense_ids.iter().copied()).collect();
+            candidates.sort_unstable();
+            candidates.dedup();
+            candidates
+                .into_iter()
+                .filter_map(|id| {
+                    let stored = snapshot.stored_vector(id)?;
+                    Some((id, 1.0 - crate::vector::cosine_distance(query, &stored)))
+                })
+                .collect()
+        };
+        let fuse = |query: &[f32], dense_ids: &[u64], dense_distances: &[f32]| match self.fusion {
             Fusion::Rrf => {
                 let lexical_ids: Vec<u64> = lexical.iter().map(|hit| hit.chunk_id).collect();
-                rrf_weighted(&lexical_ids, &dense.ids, self.rrf_weights)
+                rrf_weighted(&lexical_ids, dense_ids, self.rrf_weights)
             }
             Fusion::Score { dense_weight } => {
-                let lexical: Vec<(u64, f32)> = lexical.iter().map(|hit| (hit.chunk_id, hit.score)).collect();
                 let dense: Vec<(u64, f32)> =
-                    dense.ids.iter().zip(&dense.distances).map(|(id, d)| (*id, 1.0 - d)).collect();
-                score_fusion(&lexical, &dense, dense_weight)
+                    dense_ids.iter().zip(dense_distances).map(|(id, d)| (*id, 1.0 - d)).collect();
+                score_fusion(&lexical_scores, &dense, dense_weight)
             }
-            Fusion::Rescore { dense_weight } => {
-                let lexical: Vec<(u64, f32)> = lexical.iter().map(|hit| (hit.chunk_id, hit.score)).collect();
-                let mut candidates: Vec<u64> =
-                    lexical.iter().map(|(id, _)| *id).chain(dense.ids.iter().copied()).collect();
-                candidates.sort_unstable();
-                candidates.dedup();
-                let query = dense.query.as_deref().unwrap_or_default();
-                let sims: Vec<(u64, f32)> = candidates
-                    .into_iter()
-                    .filter_map(|id| {
-                        let stored = snapshot.stored_vector(id)?;
-                        Some((id, 1.0 - crate::vector::cosine_distance(query, &stored)))
-                    })
-                    .collect();
-                score_fusion(&lexical, &sims, dense_weight)
+            Fusion::Rescore { dense_weight } => score_fusion(&lexical_scores, &sims_of(query, dense_ids), dense_weight),
+            Fusion::RescoreMax { dense_weight } => {
+                max_fusion(&lexical_scores, &sims_of(query, dense_ids), dense_weight)
             }
         };
-
+        let query_vector = dense.query.clone().unwrap_or_default();
+        let fused = fuse(&query_vector, &dense.ids, &dense.distances);
         let reranker: &dyn Reranker = if opts.rerank { self.reranker.as_ref() } else { &NoopReranker };
         let mut hits = Vec::new();
         if opts.rerank {

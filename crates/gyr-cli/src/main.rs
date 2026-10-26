@@ -94,6 +94,7 @@ pub enum FusionKind {
     Rrf,
     Score,
     Rescore,
+    RescoreMax,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -109,7 +110,7 @@ struct TierDefaults {
     embedder: EmbedderKind,
     model_dir: &'static str,
     model_id: &'static str,
-    dense_alpha: f32,
+    fusion: Fusion,
 }
 
 impl Tier {
@@ -118,12 +119,7 @@ impl Tier {
             Tier::Lite => (gyrfalcon::Tier::Lite, EmbedderKind::Static),
             Tier::Full => (gyrfalcon::Tier::Full, EmbedderKind::Ort),
         };
-        TierDefaults {
-            embedder,
-            model_dir: tier.model_dir(),
-            model_id: tier.model_id(),
-            dense_alpha: tier.dense_weight(),
-        }
+        TierDefaults { embedder, model_dir: tier.model_dir(), model_id: tier.model_id(), fusion: tier.fusion() }
     }
 }
 
@@ -159,10 +155,12 @@ pub struct ModelArgs {
     /// RRF weight of the dense leg.
     #[arg(long, default_value_t = 1.0)]
     pub dense_weight: f32,
-    /// How retrieve combines BM25 and dense: rrf, score, or rescore.
-    #[arg(long, value_enum, default_value = "rescore")]
-    pub fusion: FusionKind,
-    /// Dense share for --fusion score or rescore, in [0, 1]; defaults to the tier's.
+    /// How retrieve combines BM25 and dense: rrf, score, rescore, or rescore-max; defaults to
+    /// the tier's (rescore-max for lite, rescore for full).
+    #[arg(long, value_enum)]
+    pub fusion: Option<FusionKind>,
+    /// Dense share for --fusion score, rescore, or rescore-max, in [0, 1]; defaults to the
+    /// tier's for its own fusion.
     #[arg(long)]
     pub dense_alpha: Option<f32>,
     #[arg(long, env = "GYR_CHAT_ENDPOINT")]
@@ -199,11 +197,23 @@ impl ModelArgs {
     }
 
     pub fn fusion(&self) -> Fusion {
-        let dense_weight = self.dense_alpha.unwrap_or(self.tier.defaults().dense_alpha);
-        match self.fusion {
-            FusionKind::Rrf => Fusion::Rrf,
-            FusionKind::Score => Fusion::Score { dense_weight },
-            FusionKind::Rescore => Fusion::Rescore { dense_weight },
+        let tier = self.tier.defaults().fusion;
+        let fusion = match self.fusion {
+            None => tier,
+            Some(FusionKind::Rrf) => Fusion::Rrf,
+            Some(FusionKind::Score) => Fusion::Score { dense_weight: gyrfalcon::RESCORE_DENSE_WEIGHT },
+            Some(FusionKind::Rescore) => match tier {
+                Fusion::Rescore { .. } => tier,
+                _ => Fusion::Rescore { dense_weight: gyrfalcon::RESCORE_DENSE_WEIGHT },
+            },
+            Some(FusionKind::RescoreMax) => match tier {
+                Fusion::RescoreMax { .. } => tier,
+                _ => Fusion::RescoreMax { dense_weight: gyrfalcon::LITE_DENSE_WEIGHT },
+            },
+        };
+        match self.dense_alpha {
+            Some(weight) => fusion.with_dense_weight(weight),
+            None => fusion,
         }
     }
 

@@ -889,3 +889,20 @@ fusion: SciFact 0.7054 vs 0.7092, NFCorpus 0.3363 vs 0.3410, ArguAna 0.4739 vs 0
 slightly stronger on FiQA (0.198 vs 0.189); truncated to 512 or 256 dimensions it lost a little
 more. Potion stays. `StaticEmbedder::truncated` (and `--dimension` on the CLI) remains for
 Matryoshka static models.
+
+### Lite fusion and query term counts (2026-10-26)
+
+Chosen on the tuning sets' validation splits and reported on their test splits and on four
+held-out BEIR sets never used for a choice (TREC-COVID, SciDocs, Quora, Touché-2020); details and
+every rejected idea in `bench/results/2026-10-26-quality-sweep/`.
+
+- The lite tier fuses with `Fusion::RescoreMax { dense_weight: 0.45 }`: BM25 over the query's
+  best BM25 score plus raw cosine. `Tier::fusion` holds each tier's rule; the full tier keeps
+  min-max `Rescore` at 0.65, where max fusion lost at every weight. `Fusion::default()` is the
+  lite rule; the CLI's `--fusion` defaults to the tier's and offers `rescore-max`.
+- A query term repeated n times weighs n in BM25 (both segments and the write buffer), as
+  Lucene and Tantivy score a repeated clause; the Tantivy differential test keeps duplicate
+  clauses and allows float ties at the limit.
+
+Lite tuning mean 0.4480 to 0.4524, held-out mean 0.4922 to 0.4993; Touché is the one set that
+fell (0.328 to 0.318, not significant). Latency and index time are unchanged.

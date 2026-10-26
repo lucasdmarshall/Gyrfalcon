@@ -30,9 +30,9 @@ datasets with the same embedder, potion-retrieval-32M, on a 4-vCPU cloud VM
 | | Gyrfalcon | LlamaIndex | LangChain | Haystack |
 |---|---|---|---|---|
 | nDCG@10, SciFact | **0.709** | 0.695 | 0.604 | 0.674 |
-| nDCG@10, NFCorpus | **0.341** | 0.308 | 0.254 | 0.327 |
-| nDCG@10, ArguAna | **0.473** | 0.473 | 0.387 | 0.441 |
-| nDCG@10, FiQA | **0.269** | 0.242 | 0.188 | 0.239 |
+| nDCG@10, NFCorpus | **0.344** | 0.308 | 0.254 | 0.327 |
+| nDCG@10, ArguAna | **0.491** | 0.473 | 0.387 | 0.441 |
+| nDCG@10, FiQA | **0.266** | 0.242 | 0.188 | 0.239 |
 | index FiQA (57k docs), s | **2.00** | 32.8 | 20.6 | 17.7 |
 | query p50, FiQA, ms | **2.68** | 1,436 | 2,398 | 2,226 |
 | peak RSS, FiQA, MB | **414** | 2,116 | 2,791 | 2,386 |
@@ -41,6 +41,11 @@ With the full tier against the same frameworks on bge-small-en-v1.5
 (`bench/results/2026-10-26-cloud-4core-bge-h2h`), SciFact scores 0.743 nDCG@10 against
 0.639–0.727, indexes in 193 s against 636–1,251 s, answers in 9 ms against 137–167 ms, and
 peaks at 499 MB against 1.45–1.52 GB.
+
+Gyrfalcon's fusion weights were chosen on validation splits of SciFact, NFCorpus, ArguAna,
+FiQA, and Open RAG Bench; the other frameworks run their defaults. On four BEIR sets never used
+for a choice the lite tier scores TREC-COVID 0.680, SciDocs 0.165, Quora 0.834, and Touché-2020
+0.318 (`bench/results/2026-10-26-quality-sweep`).
 
 On one core the gap holds: SciFact indexes in 0.9 s against 7–19 s, and queries take 2 ms
 against 110–180 ms (`bench/results/2026-10-25-cloud-1core-h2h`; Gyrfalcon's rows refreshed in

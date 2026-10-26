@@ -1,0 +1,550 @@
+{
+  "datasets": [
+    {
+      "dataset": "scifact",
+      "docs": 5183,
+      "docs_per_sec": 9985.813613334289,
+      "index_seconds": 0.519036325,
+      "queries": 300,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.6707182539682538,
+          "ndcg_at_10": 0.7091728058256767,
+          "query_p50_ms": 1.642068,
+          "query_p99_ms": 3.153195,
+          "recall_at_100": 0.9570000000000001
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.6713240740740739,
+          "ndcg_at_10": 0.7092721704525935,
+          "query_p50_ms": 1.7175129999999998,
+          "query_p99_ms": 2.771693,
+          "recall_at_100": 0.9282222222222223
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.674074074074074,
+          "ndcg_at_10": 0.7088063289765038,
+          "query_p50_ms": 2.158101,
+          "query_p99_ms": 2.881373,
+          "recall_at_100": 0.9282222222222223
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.6747023809523808,
+          "ndcg_at_10": 0.708997710248244,
+          "query_p50_ms": 1.6888859999999999,
+          "query_p99_ms": 3.7820470000000004,
+          "recall_at_100": 0.924888888888889
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.6710634920634923,
+          "ndcg_at_10": 0.7060921287816749,
+          "query_p50_ms": 1.7436820000000002,
+          "query_p99_ms": 3.289204,
+          "recall_at_100": 0.924888888888889
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.6687261904761904,
+          "ndcg_at_10": 0.7036045178918959,
+          "query_p50_ms": 2.267146,
+          "query_p99_ms": 2.894726,
+          "recall_at_100": 0.924888888888889
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.6734616402116405,
+          "ndcg_at_10": 0.7074266452841633,
+          "query_p50_ms": 1.733353,
+          "query_p99_ms": 2.649452,
+          "recall_at_100": 0.9282222222222223
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "nfcorpus",
+      "docs": 3633,
+      "docs_per_sec": 11023.939052600857,
+      "index_seconds": 0.329555523,
+      "queries": 323,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.5506818516880437,
+          "ndcg_at_10": 0.34099961305403625,
+          "query_p50_ms": 2.062618,
+          "query_p99_ms": 3.866636,
+          "recall_at_100": 0.30801508442491604
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.5499803430143989,
+          "ndcg_at_10": 0.34416579987457097,
+          "query_p50_ms": 1.54491,
+          "query_p99_ms": 2.759254,
+          "recall_at_100": 0.29049095104312894
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.5494348616639639,
+          "ndcg_at_10": 0.34352287346135096,
+          "query_p50_ms": 2.30163,
+          "query_p99_ms": 3.115887,
+          "recall_at_100": 0.2888999637710271
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.5463597719789671,
+          "ndcg_at_10": 0.34352501755664033,
+          "query_p50_ms": 2.217167,
+          "query_p99_ms": 4.055449,
+          "recall_at_100": 0.2888524022391267
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.5490613789375399,
+          "ndcg_at_10": 0.34521834388026623,
+          "query_p50_ms": 1.571542,
+          "query_p99_ms": 2.259144,
+          "recall_at_100": 0.28856890664564594
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.5493070912575558,
+          "ndcg_at_10": 0.34429184929968526,
+          "query_p50_ms": 1.6188879999999999,
+          "query_p99_ms": 2.694953,
+          "recall_at_100": 0.28678913149482216
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.551047963044867,
+          "ndcg_at_10": 0.3453746367263517,
+          "query_p50_ms": 1.626123,
+          "query_p99_ms": 2.458106,
+          "recall_at_100": 0.29099211659488616
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "arguana",
+      "docs": 8674,
+      "docs_per_sec": 19297.397808420737,
+      "index_seconds": 0.449490656,
+      "queries": 1406,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.38085472690735805,
+          "ndcg_at_10": 0.47289857012258735,
+          "query_p50_ms": 2.669032,
+          "query_p99_ms": 3.988808,
+          "recall_at_100": 0.968705547652916
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.3874539953487321,
+          "ndcg_at_10": 0.4769469941345008,
+          "query_p50_ms": 2.674068,
+          "query_p99_ms": 4.74916,
+          "recall_at_100": 0.9644381223328592
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.4046428006954321,
+          "ndcg_at_10": 0.49122865489132983,
+          "query_p50_ms": 2.565797,
+          "query_p99_ms": 4.156603,
+          "recall_at_100": 0.9679943100995733
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.40686259567838473,
+          "ndcg_at_10": 0.4938862416029165,
+          "query_p50_ms": 2.597079,
+          "query_p99_ms": 4.35156,
+          "recall_at_100": 0.9701280227596017
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.4123611393348232,
+          "ndcg_at_10": 0.49923183621916856,
+          "query_p50_ms": 2.204805,
+          "query_p99_ms": 3.6795069999999996,
+          "recall_at_100": 0.9715504978662873
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.41084355031723424,
+          "ndcg_at_10": 0.49776015449491506,
+          "query_p50_ms": 2.659945,
+          "query_p99_ms": 4.076376,
+          "recall_at_100": 0.9694167852062588
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.4098797105376055,
+          "ndcg_at_10": 0.4959242626153794,
+          "query_p50_ms": 2.485922,
+          "query_p99_ms": 5.131995,
+          "recall_at_100": 0.972972972972973
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "fiqa",
+      "docs": 57638,
+      "docs_per_sec": 28062.35759861606,
+      "index_seconds": 2.05392579,
+      "queries": 648,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.32470728003135413,
+          "ndcg_at_10": 0.2688844459584765,
+          "query_p50_ms": 3.213793,
+          "query_p99_ms": 4.73327,
+          "recall_at_100": 0.557305742953891
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.3203085194983343,
+          "ndcg_at_10": 0.26780261733844035,
+          "query_p50_ms": 3.4318869999999997,
+          "query_p99_ms": 4.646201,
+          "recall_at_100": 0.5522781573707497
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.31838563100137174,
+          "ndcg_at_10": 0.26586065675741455,
+          "query_p50_ms": 3.463486,
+          "query_p99_ms": 4.847257,
+          "recall_at_100": 0.5513896425933461
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.3148117528904566,
+          "ndcg_at_10": 0.2627547462985508,
+          "query_p50_ms": 3.2276380000000002,
+          "query_p99_ms": 5.024581,
+          "recall_at_100": 0.5537649892973966
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.30924639917695473,
+          "ndcg_at_10": 0.257224233209673,
+          "query_p50_ms": 3.192022,
+          "query_p99_ms": 5.487153,
+          "recall_at_100": 0.5557197218076847
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.3069285224377816,
+          "ndcg_at_10": 0.25596552951083706,
+          "query_p50_ms": 3.2530509999999997,
+          "query_p99_ms": 4.545172,
+          "recall_at_100": 0.5557197218076847
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.30876016558886926,
+          "ndcg_at_10": 0.257195005933214,
+          "query_p50_ms": 3.235595,
+          "query_p99_ms": 4.566878,
+          "recall_at_100": 0.5562341250998658
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "trec-covid",
+      "docs": 171332,
+      "docs_per_sec": 12655.285419918882,
+      "index_seconds": 13.53837502,
+      "queries": 50,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.904,
+          "ndcg_at_10": 0.644137013027787,
+          "query_p50_ms": 4.013517,
+          "query_p99_ms": 80.226136,
+          "recall_at_100": 0.1019159923593545
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.9283333333333332,
+          "ndcg_at_10": 0.6813360743000719,
+          "query_p50_ms": 3.8997379999999997,
+          "query_p99_ms": 8.125033,
+          "recall_at_100": 0.11116570099138323
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.9283333333333332,
+          "ndcg_at_10": 0.6797374399089415,
+          "query_p50_ms": 4.281968,
+          "query_p99_ms": 6.2585239999999995,
+          "recall_at_100": 0.11103000493172673
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.9216666666666667,
+          "ndcg_at_10": 0.6807570373529039,
+          "query_p50_ms": 4.176676,
+          "query_p99_ms": 5.720836,
+          "recall_at_100": 0.11303030849686195
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.9191666666666667,
+          "ndcg_at_10": 0.6824050670079422,
+          "query_p50_ms": 4.08703,
+          "query_p99_ms": 5.3229109999999995,
+          "recall_at_100": 0.11365227880353983
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.9191666666666667,
+          "ndcg_at_10": 0.680532181155772,
+          "query_p50_ms": 3.7345759999999997,
+          "query_p99_ms": 7.226653000000001,
+          "recall_at_100": 0.11365227880353983
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.92,
+          "ndcg_at_10": 0.6798503361880112,
+          "query_p50_ms": 3.452604,
+          "query_p99_ms": 5.928129,
+          "recall_at_100": 0.11388716832741959
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "scidocs",
+      "docs": 25657,
+      "docs_per_sec": 21939.004085814362,
+      "index_seconds": 1.169469676,
+      "queries": 1000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.2832996031746029,
+          "ndcg_at_10": 0.16427026089612015,
+          "query_p50_ms": 2.286672,
+          "query_p99_ms": 3.6952209999999996,
+          "recall_at_100": 0.37979999999999886
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.2830551587301585,
+          "ndcg_at_10": 0.16529849192096024,
+          "query_p50_ms": 2.3835290000000002,
+          "query_p99_ms": 4.2868580000000005,
+          "recall_at_100": 0.35899999999999904
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.28055198412698384,
+          "ndcg_at_10": 0.16458821003880317,
+          "query_p50_ms": 2.179475,
+          "query_p99_ms": 3.638855,
+          "recall_at_100": 0.3607833333333324
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.28255992063492047,
+          "ndcg_at_10": 0.16521635919910285,
+          "query_p50_ms": 2.2061580000000003,
+          "query_p99_ms": 3.449486,
+          "recall_at_100": 0.36498333333333227
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.28306111111111104,
+          "ndcg_at_10": 0.1649847174252319,
+          "query_p50_ms": 2.23815,
+          "query_p99_ms": 3.752166,
+          "recall_at_100": 0.36834999999999907
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.28160634920634914,
+          "ndcg_at_10": 0.16431913632843556,
+          "query_p50_ms": 2.152074,
+          "query_p99_ms": 4.441320999999999,
+          "recall_at_100": 0.36834999999999907
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.2842539682539682,
+          "ndcg_at_10": 0.16507408930458903,
+          "query_p50_ms": 2.22426,
+          "query_p99_ms": 3.666432,
+          "recall_at_100": 0.36914999999999903
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "quora",
+      "docs": 522931,
+      "docs_per_sec": 77211.76436016841,
+      "index_seconds": 6.77268554,
+      "queries": 10000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.8267147222222188,
+          "ndcg_at_10": 0.8319343801166545,
+          "query_p50_ms": 6.228686,
+          "query_p99_ms": 10.290521,
+          "recall_at_100": 0.9863135230069326
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.8324378571428535,
+          "ndcg_at_10": 0.8368417789586677,
+          "query_p50_ms": 6.4345419999999995,
+          "query_p99_ms": 11.052544,
+          "recall_at_100": 0.9787316312507272
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.8299372619047579,
+          "ndcg_at_10": 0.8343980230480278,
+          "query_p50_ms": 6.949732,
+          "query_p99_ms": 11.317886,
+          "recall_at_100": 0.9781017915071374
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.8279072222222181,
+          "ndcg_at_10": 0.8324879238888716,
+          "query_p50_ms": 6.771864,
+          "query_p99_ms": 10.975980999999999,
+          "recall_at_100": 0.978376765656526
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.8238820634920591,
+          "ndcg_at_10": 0.8290129685874241,
+          "query_p50_ms": 6.90868,
+          "query_p99_ms": 11.563731,
+          "recall_at_100": 0.978433153107712
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.8236585714285669,
+          "ndcg_at_10": 0.8286631610665337,
+          "query_p50_ms": 7.80164,
+          "query_p99_ms": 11.556871,
+          "recall_at_100": 0.9781498197743788
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.8256797619047573,
+          "ndcg_at_10": 0.8304637712715522,
+          "query_p50_ms": 7.997751000000001,
+          "query_p99_ms": 12.017379,
+          "recall_at_100": 0.9793004546950138
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "webis-touche2020",
+      "docs": 382545,
+      "docs_per_sec": 6945.857906520449,
+      "index_seconds": 55.07527006,
+      "queries": 49,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "rescore:0.4",
+          "mrr_at_10": 0.5532555879494654,
+          "ndcg_at_10": 0.3284318374905158,
+          "query_p50_ms": 6.973359,
+          "query_p99_ms": 342.571378,
+          "recall_at_100": 0.5533523933279917
+        },
+        {
+          "fusion": "rescoremax:0.45",
+          "mrr_at_10": 0.5429381276320051,
+          "ndcg_at_10": 0.317278399273899,
+          "query_p50_ms": 6.895933,
+          "query_p99_ms": 7.984318000000001,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin",
+          "mrr_at_10": 0.5429381276320051,
+          "ndcg_at_10": 0.3183052541357152,
+          "query_p50_ms": 6.6503760000000005,
+          "query_p99_ms": 9.369836,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.5457725947521866,
+          "ndcg_at_10": 0.3185377712358738,
+          "query_p50_ms": 6.908707,
+          "query_p99_ms": 8.774075,
+          "recall_at_100": 0.5576696175316346
+        },
+        {
+          "fusion": "rescoremax:0.45+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.5268383543893748,
+          "ndcg_at_10": 0.310040480068382,
+          "query_p50_ms": 6.812032,
+          "query_p99_ms": 16.286286,
+          "recall_at_100": 0.557808796214862
+        },
+        {
+          "fusion": "rescoremax:0.4+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.5354227405247813,
+          "ndcg_at_10": 0.3194203255793024,
+          "query_p50_ms": 5.4653469999999995,
+          "query_p99_ms": 8.830351,
+          "recall_at_100": 0.557808796214862
+        },
+        {
+          "fusion": "rescoremax:0.5+set:GYR_QTF=lin+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.5271460965338516,
+          "ndcg_at_10": 0.3101237800613659,
+          "query_p50_ms": 5.1479550000000005,
+          "query_p99_ms": 8.603176000000001,
+          "recall_at_100": 0.557808796214862
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "17f7bf3f38209be89f52281ea6151a274fb4e70d",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}

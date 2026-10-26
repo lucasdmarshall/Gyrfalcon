@@ -6,7 +6,7 @@ use std::path::Path;
 
 use crate::embed::{Embedder, SessionEmbedder};
 use crate::error::{Error, Result};
-use crate::fuse::{Fusion, FULL_RESCORE_DENSE_WEIGHT, RESCORE_DENSE_WEIGHT};
+use crate::fuse::{Fusion, FULL_RESCORE_DENSE_WEIGHT, LITE_DENSE_WEIGHT};
 use crate::index::Index;
 use crate::manifest::{IndexConfig, Quantization, ANALYZER_ID, DEFAULT_DIMENSION, STATIC_MODEL_ID};
 use crate::ort_session::OrtModel;
@@ -61,11 +61,13 @@ impl Tier {
         }
     }
 
-    /// The default dense share of rescore fusion, chosen on validation splits per tier.
-    pub fn dense_weight(self) -> f32 {
+    /// How retrieval fuses the legs, chosen on validation splits per tier. Static cosines
+    /// spread widely, so the lite tier mixes them raw with BM25 over its query maximum; bge's
+    /// cosines sit in a narrow band and need min-max stretching.
+    pub fn fusion(self) -> Fusion {
         match self {
-            Tier::Lite => RESCORE_DENSE_WEIGHT,
-            Tier::Full => FULL_RESCORE_DENSE_WEIGHT,
+            Tier::Lite => Fusion::RescoreMax { dense_weight: LITE_DENSE_WEIGHT },
+            Tier::Full => Fusion::Rescore { dense_weight: FULL_RESCORE_DENSE_WEIGHT },
         }
     }
 
@@ -134,7 +136,7 @@ impl Tier {
             )));
         }
         index.set_embedder(embedder);
-        index.fusion = Fusion::Rescore { dense_weight: self.dense_weight() };
+        index.fusion = self.fusion();
         Ok(index)
     }
 }

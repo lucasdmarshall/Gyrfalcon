@@ -1,0 +1,358 @@
+{
+  "datasets": [
+    {
+      "dataset": "scifact",
+      "docs": 5183,
+      "docs_per_sec": 3866.1813097112654,
+      "index_seconds": 1.340599311,
+      "queries": 300,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.6707182539682538,
+          "ndcg_at_10": 0.7091728058256767,
+          "query_p50_ms": 1.9141029999999999,
+          "query_p99_ms": 4.340915,
+          "recall_at_100": 0.9570000000000001
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6495383597883597,
+          "ndcg_at_10": 0.6858965812867237,
+          "query_p50_ms": 1.594832,
+          "query_p99_ms": 2.791296,
+          "recall_at_100": 0.9215555555555557
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.5891243386243388,
+          "ndcg_at_10": 0.6322742045372747,
+          "query_p50_ms": 1.749343,
+          "query_p99_ms": 3.8081500000000004,
+          "recall_at_100": 0.9342222222222222
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.6547367724867725,
+          "ndcg_at_10": 0.6962741040529853,
+          "query_p50_ms": 1.651385,
+          "query_p99_ms": 3.1866339999999997,
+          "recall_at_100": 0.9586666666666668
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "nfcorpus",
+      "docs": 3633,
+      "docs_per_sec": 13085.47713165016,
+      "index_seconds": 0.277636036,
+      "queries": 323,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5506818516880437,
+          "ndcg_at_10": 0.34099961305403625,
+          "query_p50_ms": 1.664646,
+          "query_p99_ms": 2.4568630000000002,
+          "recall_at_100": 0.30801508442491604
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.5272212393729422,
+          "ndcg_at_10": 0.32365902001634506,
+          "query_p50_ms": 1.5382550000000001,
+          "query_p99_ms": 3.547825,
+          "recall_at_100": 0.2854282880614064
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.5068910020148412,
+          "ndcg_at_10": 0.30757717148442176,
+          "query_p50_ms": 1.696508,
+          "query_p99_ms": 4.38868,
+          "recall_at_100": 0.2852429610979457
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.5504287679984273,
+          "ndcg_at_10": 0.3398107995847671,
+          "query_p50_ms": 1.580959,
+          "query_p99_ms": 4.214756,
+          "recall_at_100": 0.3081046502708678
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "arguana",
+      "docs": 8674,
+      "docs_per_sec": 13538.340899048006,
+      "index_seconds": 0.640698891,
+      "queries": 1406,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.38085472690735805,
+          "ndcg_at_10": 0.47289857012258735,
+          "query_p50_ms": 2.2530979999999996,
+          "query_p99_ms": 4.347133,
+          "recall_at_100": 0.968705547652916
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.3223974914764382,
+          "ndcg_at_10": 0.40330107742168836,
+          "query_p50_ms": 2.079363,
+          "query_p99_ms": 4.7664930000000005,
+          "recall_at_100": 0.9075391180654339
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.3694506536611793,
+          "ndcg_at_10": 0.4516360201676683,
+          "query_p50_ms": 1.834724,
+          "query_p99_ms": 3.523365,
+          "recall_at_100": 0.9580369843527738
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.37543605635710847,
+          "ndcg_at_10": 0.4640498318774368,
+          "query_p50_ms": 2.164133,
+          "query_p99_ms": 4.022549000000001,
+          "recall_at_100": 0.9665718349928877
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "fiqa",
+      "docs": 57638,
+      "docs_per_sec": 24482.019395823165,
+      "index_seconds": 2.354299254,
+      "queries": 648,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.32470728003135413,
+          "ndcg_at_10": 0.2688844459584765,
+          "query_p50_ms": 3.0645849999999997,
+          "query_p99_ms": 5.20946,
+          "recall_at_100": 0.557305742953891
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.312694126004311,
+          "ndcg_at_10": 0.2503600207453346,
+          "query_p50_ms": 2.791953,
+          "query_p99_ms": 4.34298,
+          "recall_at_100": 0.5522781573707497
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.22200543797766006,
+          "ndcg_at_10": 0.18874240528283048,
+          "query_p50_ms": 2.514846,
+          "query_p99_ms": 4.554779999999999,
+          "recall_at_100": 0.48398861512287433
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.2891858955516361,
+          "ndcg_at_10": 0.24524051321341678,
+          "query_p50_ms": 2.533527,
+          "query_p99_ms": 4.214808,
+          "recall_at_100": 0.5607259124620234
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "trec-covid",
+      "docs": 171332,
+      "docs_per_sec": 10963.470535498884,
+      "index_seconds": 15.62753322,
+      "queries": 50,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.904,
+          "ndcg_at_10": 0.644137013027787,
+          "query_p50_ms": 3.661907,
+          "query_p99_ms": 184.44082600000002,
+          "recall_at_100": 0.1019159923593545
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.8696666666666667,
+          "ndcg_at_10": 0.6019128233118761,
+          "query_p50_ms": 3.896864,
+          "query_p99_ms": 13.28753,
+          "recall_at_100": 0.11116570099138323
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.6411111111111112,
+          "ndcg_at_10": 0.44042695942177174,
+          "query_p50_ms": 3.292602,
+          "query_p99_ms": 5.20076,
+          "recall_at_100": 0.07440273985148713
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.8531904761904763,
+          "ndcg_at_10": 0.6281366238765383,
+          "query_p50_ms": 3.558292,
+          "query_p99_ms": 6.244013,
+          "recall_at_100": 0.10178437827282207
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "scidocs",
+      "docs": 25657,
+      "docs_per_sec": 20805.894919116123,
+      "index_seconds": 1.233160126,
+      "queries": 1000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.2832996031746029,
+          "ndcg_at_10": 0.16427026089612015,
+          "query_p50_ms": 2.2488859999999997,
+          "query_p99_ms": 3.720696,
+          "recall_at_100": 0.37979999999999886
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.27521626984126984,
+          "ndcg_at_10": 0.15719825370918833,
+          "query_p50_ms": 2.137994,
+          "query_p99_ms": 4.011943,
+          "recall_at_100": 0.358149999999999
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.2361833333333334,
+          "ndcg_at_10": 0.13749857508128083,
+          "query_p50_ms": 2.148509,
+          "query_p99_ms": 3.726982,
+          "recall_at_100": 0.34038333333333215
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.2698075396825396,
+          "ndcg_at_10": 0.15875699347004427,
+          "query_p50_ms": 2.211703,
+          "query_p99_ms": 4.180968,
+          "recall_at_100": 0.37793333333333223
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "quora",
+      "docs": 522931,
+      "docs_per_sec": 72778.50925245596,
+      "index_seconds": 7.185239233,
+      "queries": 10000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.8267147222222188,
+          "ndcg_at_10": 0.8319343801166545,
+          "query_p50_ms": 6.013082000000001,
+          "query_p99_ms": 10.676569,
+          "recall_at_100": 0.9863135230069326
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.8043395634920596,
+          "ndcg_at_10": 0.8097141949248288,
+          "query_p50_ms": 5.794836,
+          "query_p99_ms": 10.195851000000001,
+          "recall_at_100": 0.9781461550602509
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.7774134523809472,
+          "ndcg_at_10": 0.7837688602291092,
+          "query_p50_ms": 5.868414,
+          "query_p99_ms": 10.278113,
+          "recall_at_100": 0.9695124454828776
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.8121351984126938,
+          "ndcg_at_10": 0.818781692989356,
+          "query_p50_ms": 5.558851,
+          "query_p99_ms": 9.820927,
+          "recall_at_100": 0.9862195152488071
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "webis-touche2020",
+      "docs": 382545,
+      "docs_per_sec": 7658.093850398827,
+      "index_seconds": 49.953031064,
+      "queries": 49,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5532555879494654,
+          "ndcg_at_10": 0.3284318374905158,
+          "query_p50_ms": 5.204753999999999,
+          "query_p99_ms": 341.264671,
+          "recall_at_100": 0.5533523933279917
+        },
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6051020408163265,
+          "ndcg_at_10": 0.33273472267475773,
+          "query_p50_ms": 4.667486,
+          "query_p99_ms": 6.748139,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "dense",
+          "mrr_at_10": 0.4258503401360544,
+          "ndcg_at_10": 0.2108719334128544,
+          "query_p50_ms": 4.4760599999999995,
+          "query_p99_ms": 5.810456,
+          "recall_at_100": 0.44608653843639207
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.5448655652737285,
+          "ndcg_at_10": 0.3091644018906195,
+          "query_p50_ms": 4.5004349999999995,
+          "query_p99_ms": 7.41436,
+          "recall_at_100": 0.5610744091319191
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "17f7bf3f38209be89f52281ea6151a274fb4e70d",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}

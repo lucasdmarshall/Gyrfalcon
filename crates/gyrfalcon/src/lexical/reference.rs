@@ -77,9 +77,9 @@ impl Tantivy {
 
     /// Every matching live chunk, best first, ties by chunk id.
     fn search(&self, tokens: &[Token], limit: usize, stats: &CollectionStats, dead: &Tombstones) -> Vec<ScoredId> {
+        // A repeated query term is a repeated clause, which Tantivy sums.
         let mut terms: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
         terms.sort_unstable();
-        terms.dedup();
         let clauses: Vec<(Occur, Box<dyn Query>)> = terms
             .into_iter()
             .map(|t| {
@@ -149,9 +149,15 @@ fn assert_same_ranking(ours: &[ScoredId], theirs: &[ScoredId], context: &str) {
         let tolerance = 1e-6 * a.score.abs().max(1.0);
         assert!((a.score - b.score).abs() <= tolerance, "{context}: rank {rank} score {} vs {}", a.score, b.score);
         if a.chunk_id != b.chunk_id {
-            // Only a float-rounding tie may swap two hits.
-            let other = theirs.iter().find(|h| h.chunk_id == a.chunk_id).expect("hit missing from Tantivy");
-            assert!((other.score - a.score).abs() <= tolerance, "{context}: rank {rank} differs");
+            // Only a float-rounding tie may swap two hits, including across the limit (a term
+            // repeated n times weighs (n * w) * x here and w * x summed n times there).
+            match theirs.iter().find(|h| h.chunk_id == a.chunk_id) {
+                Some(other) => assert!((other.score - a.score).abs() <= tolerance, "{context}: rank {rank} differs"),
+                None => {
+                    let last = theirs.last().expect("lists have the same length").score;
+                    assert!((last - a.score).abs() <= tolerance, "{context}: rank {rank} missing from Tantivy");
+                }
+            }
         }
     }
 }

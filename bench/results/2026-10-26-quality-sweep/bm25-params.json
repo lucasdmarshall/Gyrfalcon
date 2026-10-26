@@ -1,0 +1,742 @@
+{
+  "datasets": [
+    {
+      "dataset": "scifact",
+      "docs": 5183,
+      "docs_per_sec": 12606.110224189224,
+      "index_seconds": 0.411149824,
+      "queries": 300,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6495383597883597,
+          "ndcg_at_10": 0.6858965812867237,
+          "query_p50_ms": 1.48283,
+          "query_p99_ms": 2.144831,
+          "recall_at_100": 0.9215555555555557
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.6485859788359789,
+          "ndcg_at_10": 0.6821729252193757,
+          "query_p50_ms": 1.5536020000000001,
+          "query_p99_ms": 3.55042,
+          "recall_at_100": 0.922
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.6509973544973545,
+          "ndcg_at_10": 0.6832718229751581,
+          "query_p50_ms": 1.549715,
+          "query_p99_ms": 2.2890050000000004,
+          "recall_at_100": 0.9208888888888889
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.6528624338624339,
+          "ndcg_at_10": 0.6877747160445838,
+          "query_p50_ms": 1.88716,
+          "query_p99_ms": 2.484935,
+          "recall_at_100": 0.9182222222222223
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.6496587301587302,
+          "ndcg_at_10": 0.6848713313443503,
+          "query_p50_ms": 2.1591980000000004,
+          "query_p99_ms": 3.4246290000000004,
+          "recall_at_100": 0.9213333333333332
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.6474616402116402,
+          "ndcg_at_10": 0.6848375918335943,
+          "query_p50_ms": 1.536062,
+          "query_p99_ms": 3.9978219999999998,
+          "recall_at_100": 0.9182222222222223
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.6552698412698413,
+          "ndcg_at_10": 0.6903889469343545,
+          "query_p50_ms": 2.1976869999999997,
+          "query_p99_ms": 2.7365570000000004,
+          "recall_at_100": 0.9182222222222223
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.6485330687830688,
+          "ndcg_at_10": 0.6838477615583588,
+          "query_p50_ms": 2.060418,
+          "query_p99_ms": 5.539107,
+          "recall_at_100": 0.9215555555555557
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.6517883597883597,
+          "ndcg_at_10": 0.6877856848156181,
+          "query_p50_ms": 2.2724300000000004,
+          "query_p99_ms": 2.591903,
+          "recall_at_100": 0.9215555555555557
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.6482552910052909,
+          "ndcg_at_10": 0.6837520757327968,
+          "query_p50_ms": 1.675225,
+          "query_p99_ms": 2.8015079999999997,
+          "recall_at_100": 0.9215555555555557
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "nfcorpus",
+      "docs": 3633,
+      "docs_per_sec": 11454.408531326711,
+      "index_seconds": 0.317170458,
+      "queries": 323,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.5272212393729422,
+          "ndcg_at_10": 0.32365902001634506,
+          "query_p50_ms": 1.945853,
+          "query_p99_ms": 2.546748,
+          "recall_at_100": 0.2854282880614064
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.5226239618654479,
+          "ndcg_at_10": 0.32295346843181755,
+          "query_p50_ms": 1.403748,
+          "query_p99_ms": 2.170944,
+          "recall_at_100": 0.2850897865252118
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.5328013661604992,
+          "ndcg_at_10": 0.3252672899802874,
+          "query_p50_ms": 1.5125449999999998,
+          "query_p99_ms": 3.99385,
+          "recall_at_100": 0.28571604331299155
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.5322313135780627,
+          "ndcg_at_10": 0.3268148037647612,
+          "query_p50_ms": 1.443662,
+          "query_p99_ms": 2.408753,
+          "recall_at_100": 0.2849034232116612
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.5166359526266647,
+          "ndcg_at_10": 0.3199779294763401,
+          "query_p50_ms": 1.4371559999999999,
+          "query_p99_ms": 3.554583,
+          "recall_at_100": 0.28533783350652975
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.5248955722639934,
+          "ndcg_at_10": 0.3229995945353908,
+          "query_p50_ms": 1.38801,
+          "query_p99_ms": 2.686246,
+          "recall_at_100": 0.28400530802920787
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.5340581846773798,
+          "ndcg_at_10": 0.32847262589171056,
+          "query_p50_ms": 1.412691,
+          "query_p99_ms": 3.257882,
+          "recall_at_100": 0.28432297380696925
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.5261597621504743,
+          "ndcg_at_10": 0.3227872822535301,
+          "query_p50_ms": 2.1484,
+          "query_p99_ms": 2.771485,
+          "recall_at_100": 0.2836653021652936
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.5270443265025309,
+          "ndcg_at_10": 0.32325805291325455,
+          "query_p50_ms": 2.09232,
+          "query_p99_ms": 2.3866270000000003,
+          "recall_at_100": 0.28504129115738164
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.5266020443265026,
+          "ndcg_at_10": 0.322982561935758,
+          "query_p50_ms": 1.3988729999999998,
+          "query_p99_ms": 3.453689,
+          "recall_at_100": 0.28400929941331565
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "arguana",
+      "docs": 8674,
+      "docs_per_sec": 18822.676970102533,
+      "index_seconds": 0.460827119,
+      "queries": 1406,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.3223974914764382,
+          "ndcg_at_10": 0.40330107742168836,
+          "query_p50_ms": 2.050004,
+          "query_p99_ms": 4.048071,
+          "recall_at_100": 0.9075391180654339
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.24909119645961755,
+          "ndcg_at_10": 0.3156640075329893,
+          "query_p50_ms": 2.1460939999999997,
+          "query_p99_ms": 4.616896,
+          "recall_at_100": 0.8307254623044097
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.2766189121452276,
+          "ndcg_at_10": 0.3510805883607028,
+          "query_p50_ms": 2.143453,
+          "query_p99_ms": 3.931632,
+          "recall_at_100": 0.8634423897581792
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.33021602429497093,
+          "ndcg_at_10": 0.41366426234859893,
+          "query_p50_ms": 2.481198,
+          "query_p99_ms": 4.743215,
+          "recall_at_100": 0.9153627311522048
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.3097783874099656,
+          "ndcg_at_10": 0.3893238903663691,
+          "query_p50_ms": 2.224895,
+          "query_p99_ms": 3.685183,
+          "recall_at_100": 0.8926031294452347
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.34554742712637376,
+          "ndcg_at_10": 0.4324671387681235,
+          "query_p50_ms": 2.420369,
+          "query_p99_ms": 4.394289,
+          "recall_at_100": 0.9210526315789473
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.3396870554765287,
+          "ndcg_at_10": 0.42547512798396386,
+          "query_p50_ms": 2.238378,
+          "query_p99_ms": 3.852094,
+          "recall_at_100": 0.9267425320056899
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.3934385513332876,
+          "ndcg_at_10": 0.48231013282022495,
+          "query_p50_ms": 2.3293519999999996,
+          "query_p99_ms": 4.069276,
+          "recall_at_100": 0.9580369843527738
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.36369273408747005,
+          "ndcg_at_10": 0.453382036944138,
+          "query_p50_ms": 2.150017,
+          "query_p99_ms": 4.342707000000001,
+          "recall_at_100": 0.9487908961593172
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.3719642574905729,
+          "ndcg_at_10": 0.460803550743231,
+          "query_p50_ms": 2.348517,
+          "query_p99_ms": 4.955244,
+          "recall_at_100": 0.9530583214793741
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "fiqa",
+      "docs": 57638,
+      "docs_per_sec": 29086.971740621186,
+      "index_seconds": 1.981574449,
+      "queries": 648,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.312694126004311,
+          "ndcg_at_10": 0.2503600207453346,
+          "query_p50_ms": 3.062039,
+          "query_p99_ms": 5.43801,
+          "recall_at_100": 0.5522781573707497
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.2988689251420733,
+          "ndcg_at_10": 0.23797543681068478,
+          "query_p50_ms": 3.1181249999999996,
+          "query_p99_ms": 5.490724,
+          "recall_at_100": 0.5306701571747867
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.30260079854987254,
+          "ndcg_at_10": 0.24249277374705025,
+          "query_p50_ms": 2.7113189999999996,
+          "query_p99_ms": 5.482137,
+          "recall_at_100": 0.5391749582721804
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.3093541789143641,
+          "ndcg_at_10": 0.25083532316943097,
+          "query_p50_ms": 2.938127,
+          "query_p99_ms": 4.804827,
+          "recall_at_100": 0.5546535040748004
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.3089444934352342,
+          "ndcg_at_10": 0.24765777035343833,
+          "query_p50_ms": 2.740904,
+          "query_p99_ms": 5.290375,
+          "recall_at_100": 0.5438982827871717
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.30506564765824024,
+          "ndcg_at_10": 0.24991630193902223,
+          "query_p50_ms": 2.727643,
+          "query_p99_ms": 6.48083,
+          "recall_at_100": 0.5523338843940695
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.30795426709778556,
+          "ndcg_at_10": 0.24950515973295428,
+          "query_p50_ms": 3.061948,
+          "query_p99_ms": 5.073714,
+          "recall_at_100": 0.5595917756797386
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.3095991328630217,
+          "ndcg_at_10": 0.24954813716113683,
+          "query_p50_ms": 3.106,
+          "query_p99_ms": 6.0772639999999996,
+          "recall_at_100": 0.5513896425933461
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.30966588281403085,
+          "ndcg_at_10": 0.2503903096928158,
+          "query_p50_ms": 3.19523,
+          "query_p99_ms": 5.395244000000001,
+          "recall_at_100": 0.552804251646844
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.3093058005095041,
+          "ndcg_at_10": 0.2503846296257377,
+          "query_p50_ms": 3.400358,
+          "query_p99_ms": 7.07615,
+          "recall_at_100": 0.5504894368320293
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "trec-covid",
+      "docs": 171332,
+      "docs_per_sec": 12991.943784167112,
+      "index_seconds": 13.187557062,
+      "queries": 50,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.8696666666666667,
+          "ndcg_at_10": 0.6019128233118761,
+          "query_p50_ms": 3.946669,
+          "query_p99_ms": 95.62478300000001,
+          "recall_at_100": 0.11116570099138323
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.8418571428571429,
+          "ndcg_at_10": 0.5880408887444293,
+          "query_p50_ms": 3.892323,
+          "query_p99_ms": 25.009041999999997,
+          "recall_at_100": 0.10807914247424125
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.8818571428571428,
+          "ndcg_at_10": 0.6222856635860067,
+          "query_p50_ms": 4.041284,
+          "query_p99_ms": 5.4890099999999995,
+          "recall_at_100": 0.11223445624372701
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.8800000000000001,
+          "ndcg_at_10": 0.619466893357565,
+          "query_p50_ms": 4.0609139999999995,
+          "query_p99_ms": 7.740439,
+          "recall_at_100": 0.11312663540037757
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.8526904761904762,
+          "ndcg_at_10": 0.5915912867574478,
+          "query_p50_ms": 3.9938409999999998,
+          "query_p99_ms": 4.914884,
+          "recall_at_100": 0.1083635956280636
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.8482222222222223,
+          "ndcg_at_10": 0.5758557710830945,
+          "query_p50_ms": 4.104226,
+          "query_p99_ms": 6.421587000000001,
+          "recall_at_100": 0.10877737370035033
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.9072222222222223,
+          "ndcg_at_10": 0.6330834816090993,
+          "query_p50_ms": 4.089562,
+          "query_p99_ms": 6.373221999999999,
+          "recall_at_100": 0.1139173448931321
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.8696666666666667,
+          "ndcg_at_10": 0.6041059801062718,
+          "query_p50_ms": 3.915704,
+          "query_p99_ms": 4.874982,
+          "recall_at_100": 0.11103000493172673
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.8696666666666667,
+          "ndcg_at_10": 0.6033911182210306,
+          "query_p50_ms": 3.430041,
+          "query_p99_ms": 7.94512,
+          "recall_at_100": 0.11115219525862971
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.8696666666666667,
+          "ndcg_at_10": 0.6041323144588262,
+          "query_p50_ms": 3.380884,
+          "query_p99_ms": 8.366533,
+          "recall_at_100": 0.11108519916798207
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "scidocs",
+      "docs": 25657,
+      "docs_per_sec": 20979.306041793447,
+      "index_seconds": 1.222967049,
+      "queries": 1000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.27521626984126984,
+          "ndcg_at_10": 0.15719825370918833,
+          "query_p50_ms": 2.163623,
+          "query_p99_ms": 3.485334,
+          "recall_at_100": 0.358149999999999
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.2644067460317459,
+          "ndcg_at_10": 0.15016622675906502,
+          "query_p50_ms": 2.371397,
+          "query_p99_ms": 4.061516,
+          "recall_at_100": 0.34446666666666553
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.268820238095238,
+          "ndcg_at_10": 0.1538947372095445,
+          "query_p50_ms": 2.4241750000000004,
+          "query_p99_ms": 4.068365,
+          "recall_at_100": 0.35309999999999886
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.27503690476190473,
+          "ndcg_at_10": 0.1580373324658849,
+          "query_p50_ms": 2.190733,
+          "query_p99_ms": 3.753868,
+          "recall_at_100": 0.36234999999999895
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.27053214285714283,
+          "ndcg_at_10": 0.15402778088878347,
+          "query_p50_ms": 2.867689,
+          "query_p99_ms": 4.913259,
+          "recall_at_100": 0.35174999999999895
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.27868769841269836,
+          "ndcg_at_10": 0.1584421682560159,
+          "query_p50_ms": 2.134994,
+          "query_p99_ms": 3.9089550000000006,
+          "recall_at_100": 0.361099999999999
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.27738571428571424,
+          "ndcg_at_10": 0.15917522778922363,
+          "query_p50_ms": 2.161831,
+          "query_p99_ms": 4.814922999999999,
+          "recall_at_100": 0.36611666666666565
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.2717301587301587,
+          "ndcg_at_10": 0.1560765480060716,
+          "query_p50_ms": 2.1608009999999997,
+          "query_p99_ms": 4.890335,
+          "recall_at_100": 0.36018333333333236
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.2732456349206349,
+          "ndcg_at_10": 0.15694809229986512,
+          "query_p50_ms": 2.134242,
+          "query_p99_ms": 4.130326,
+          "recall_at_100": 0.35959999999999914
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.27231309523809516,
+          "ndcg_at_10": 0.15632310223790416,
+          "query_p50_ms": 2.896981,
+          "query_p99_ms": 4.707818,
+          "recall_at_100": 0.36004999999999904
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "quora",
+      "docs": 522931,
+      "docs_per_sec": 69758.66182468248,
+      "index_seconds": 7.49628772,
+      "queries": 10000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.8043395634920596,
+          "ndcg_at_10": 0.8097141949248288,
+          "query_p50_ms": 6.576905,
+          "query_p99_ms": 11.435251000000001,
+          "recall_at_100": 0.9781461550602509
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.7798261111111064,
+          "ndcg_at_10": 0.7890744874188975,
+          "query_p50_ms": 7.000182,
+          "query_p99_ms": 11.17842,
+          "recall_at_100": 0.9738176827958896
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.7920495238095188,
+          "ndcg_at_10": 0.7995367918873826,
+          "query_p50_ms": 7.295231,
+          "query_p99_ms": 11.823298,
+          "recall_at_100": 0.9758729527295931
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.8022798412698365,
+          "ndcg_at_10": 0.8081667296289755,
+          "query_p50_ms": 7.258245,
+          "query_p99_ms": 10.996411,
+          "recall_at_100": 0.9785409413011427
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.804063293650789,
+          "ndcg_at_10": 0.8096245703838577,
+          "query_p50_ms": 7.49689,
+          "query_p99_ms": 10.942663,
+          "recall_at_100": 0.9773960884018268
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.803845079365074,
+          "ndcg_at_10": 0.8087444557999586,
+          "query_p50_ms": 7.028437,
+          "query_p99_ms": 10.612577,
+          "recall_at_100": 0.9785832460720177
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.7988559523809472,
+          "ndcg_at_10": 0.8050905576217643,
+          "query_p50_ms": 6.8849,
+          "query_p99_ms": 10.693190999999999,
+          "recall_at_100": 0.9784773287523287
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.8033226190476147,
+          "ndcg_at_10": 0.8085248341204426,
+          "query_p50_ms": 6.601711,
+          "query_p99_ms": 11.183069,
+          "recall_at_100": 0.9776163153166612
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.805140357142853,
+          "ndcg_at_10": 0.8103120885550773,
+          "query_p50_ms": 7.049627,
+          "query_p99_ms": 10.382465,
+          "recall_at_100": 0.9782586069833278
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.8049294444444403,
+          "ndcg_at_10": 0.8100008553811775,
+          "query_p50_ms": 6.369585,
+          "query_p99_ms": 10.913287,
+          "recall_at_100": 0.9781632597611056
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "webis-touche2020",
+      "docs": 382545,
+      "docs_per_sec": 7185.314082990608,
+      "index_seconds": 53.239843879,
+      "queries": 49,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "lexical",
+          "mrr_at_10": 0.6051020408163265,
+          "ndcg_at_10": 0.33273472267475773,
+          "query_p50_ms": 6.500352,
+          "query_p99_ms": 526.4033609999999,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.4",
+          "mrr_at_10": 0.7482102364755426,
+          "ndcg_at_10": 0.4472543025736676,
+          "query_p50_ms": 6.483732,
+          "query_p99_ms": 8.216693000000001,
+          "recall_at_100": 0.5806393016146976
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.5",
+          "mrr_at_10": 0.7560333657272432,
+          "ndcg_at_10": 0.4284287793370678,
+          "query_p50_ms": 6.870007,
+          "query_p99_ms": 9.619193,
+          "recall_at_100": 0.5790945048631339
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.5/0.75",
+          "mrr_at_10": 0.602089407191448,
+          "ndcg_at_10": 0.3360932080664132,
+          "query_p50_ms": 6.712039000000001,
+          "query_p99_ms": 9.61366,
+          "recall_at_100": 0.5576696175316346
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=0.9/0.75",
+          "mrr_at_10": 0.6011904761904762,
+          "ndcg_at_10": 0.33090231604144127,
+          "query_p50_ms": 6.594812999999999,
+          "query_p99_ms": 18.529500000000002,
+          "recall_at_100": 0.5579289824111897
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=1.2/0.9",
+          "mrr_at_10": 0.47519436345966964,
+          "ndcg_at_10": 0.2521634143599974,
+          "query_p50_ms": 6.6195960000000005,
+          "query_p99_ms": 9.571698,
+          "recall_at_100": 0.5443745797623339
+        },
+        {
+          "fusion": "lexical+set:GYR_BM25=2.0/0.75",
+          "mrr_at_10": 0.6185860058309036,
+          "ndcg_at_10": 0.33736309414498544,
+          "query_p50_ms": 6.13986,
+          "query_p99_ms": 9.812527,
+          "recall_at_100": 0.557808796214862
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=lin",
+          "mrr_at_10": 0.6085034013605443,
+          "ndcg_at_10": 0.33659712250979185,
+          "query_p50_ms": 5.548251,
+          "query_p99_ms": 7.61096,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=sqrt",
+          "mrr_at_10": 0.6085034013605443,
+          "ndcg_at_10": 0.3346351870554694,
+          "query_p50_ms": 5.390344,
+          "query_p99_ms": 8.963223,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "lexical+set:GYR_QTF=log",
+          "mrr_at_10": 0.6085034013605443,
+          "ndcg_at_10": 0.33469400730653165,
+          "query_p50_ms": 4.855193,
+          "query_p99_ms": 7.527227,
+          "recall_at_100": 0.5534031797094919
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "dimension": 512,
+    "git_revision": "17f7bf3f38209be89f52281ea6151a274fb4e70d",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}
