@@ -730,6 +730,9 @@ On validation halves with `gyr-text-v2`, mean nDCG@10 over ORB, SciFact, NFCorpu
 FiQA was 0.5119 at 0.2, 0.5175 at 0.3, 0.5187 at 0.4, and 0.5176 at 0.5. On the test halves 0.4
 beat 0.2 significantly (paired bootstrap) on all four BEIR sets, by 0.007 to 0.012; ORB moved
 -0.006 (not significant). The full tier keeps 0.3 until its traces are re-recorded with v2.
+Re-recorded on 2026-10-26, the full tier's best mean validation weight is 0.65
+(`FULL_RESCORE_DENSE_WEIGHT`), and on test it beats 0.3 significantly on all four sets: SciFact
++0.027, NFCorpus +0.014, ArguAna +0.051, ORB +0.014 (`bench/results/2026-10-26-full-tier-v2/`).
 With these defaults Gyrfalcon's lite tier has the highest nDCG@10 of the four frameworks on all
 four BEIR sets (`bench/results/2026-10-25-cloud-4core-h2h/`).
 

@@ -118,7 +118,7 @@ impl Tier {
                 embedder: EmbedderKind::Ort,
                 model_dir: "bge-small-en-v1.5-q8",
                 model_id: "Xenova/bge-small-en-v1.5-q8",
-                dense_alpha: 0.3,
+                dense_alpha: gyrfalcon::FULL_RESCORE_DENSE_WEIGHT,
             },
         }
     }

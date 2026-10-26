@@ -40,7 +40,7 @@ pub use embed::{
 };
 pub use epoch::{FileDeleter, FsDeleter, ReaderGuard, Reaper};
 pub use error::{Error, IncompatibleField, Result};
-pub use fuse::{rrf, rrf_weighted, score_fusion, Fusion, RESCORE_DENSE_WEIGHT};
+pub use fuse::{rrf, rrf_weighted, score_fusion, Fusion, FULL_RESCORE_DENSE_WEIGHT, RESCORE_DENSE_WEIGHT};
 pub use index::{
     Document, Index, IndexReport, BUFFERED_WRITE_MAX, FAN_OUT_WARNING, SEAL_EVERY, WRITE_BUFFER, WRITE_BUFFER_BYTES,
 };

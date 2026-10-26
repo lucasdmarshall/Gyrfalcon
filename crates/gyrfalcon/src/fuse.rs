@@ -7,6 +7,9 @@ pub const DENSE_WEIGHT: f32 = 1.0;
 /// Bench and four BEIR sets with the lite tier and `gyr-text-v2` (see the spec's analyzer v2
 /// section); held-out test confirmed it.
 pub const RESCORE_DENSE_WEIGHT: f32 = 0.4;
+/// The dense share for bge-small-en-v1.5 (the full tier), chosen and confirmed the same way
+/// over SciFact, NFCorpus, ArguAna, and Open RAG Bench.
+pub const FULL_RESCORE_DENSE_WEIGHT: f32 = 0.65;
 
 /// Sums `weight / (60 + rank)` over both legs, rank starting at 1. A hit missing from a leg
 /// adds 0. Sorted by score descending, then chunk id ascending.
