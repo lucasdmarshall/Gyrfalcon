@@ -72,18 +72,90 @@ const STOPWORDS: [&str; 33] = [
 /// ASCII letters only, so other scripts, numbers, and identifiers such as `e0308` keep their
 /// v1 form. Positions are renumbered over the surviving tokens.
 pub fn analyze(mut tokens: Vec<Token>) -> Vec<Token> {
-    static STEMMER: std::sync::LazyLock<frostem::Stemmer> =
-        std::sync::LazyLock::new(|| frostem::Stemmer::new(frostem::Algorithm::English));
-    tokens.retain(|token| STOPWORDS.binary_search(&token.text.as_str()).is_err());
-    for (position, token) in tokens.iter_mut().enumerate() {
-        token.position = position;
-        if token.text.bytes().all(|b| b.is_ascii_lowercase()) {
-            if let std::borrow::Cow::Owned(stem) = STEMMER.stem(&token.text) {
-                token.text = stem;
+    // Every stopword has at most 5 bytes, so most tokens skip the search.
+    tokens.retain(|token| token.text.len() > 5 || STOPWORDS.binary_search(&token.text.as_str()).is_err());
+    STEMS.with_borrow_mut(|stems| {
+        for (position, token) in tokens.iter_mut().enumerate() {
+            token.position = position;
+            if token.text.bytes().all(|b| b.is_ascii_lowercase()) {
+                stems.stem(&mut token.text);
             }
         }
-    }
+    });
     tokens
+}
+
+/// Snowball English with a per-thread, direct-mapped cache. Word frequencies are Zipfian, so
+/// almost every token hits; a slot holds a word of up to 16 bytes and its stem inline, so a hit
+/// is one hash and one compare with no allocation. A miss or a collision runs the stemmer.
+struct StemCache {
+    stemmer: frostem::Stemmer,
+    slots: Vec<Slot>,
+}
+
+/// Cache slots per thread (a power of two).
+const STEM_SLOTS: usize = 1 << 16;
+const SLOT_BYTES: usize = 16;
+
+#[derive(Clone, Copy, Default)]
+struct Slot {
+    /// 0 marks an empty slot; words are never empty.
+    word_len: u8,
+    stem_len: u8,
+    word: [u8; SLOT_BYTES],
+    stem: [u8; SLOT_BYTES],
+}
+
+thread_local! {
+    static STEMS: std::cell::RefCell<StemCache> = std::cell::RefCell::new(StemCache {
+        stemmer: frostem::Stemmer::new(frostem::Algorithm::English),
+        slots: vec![Slot::default(); STEM_SLOTS],
+    });
+}
+
+impl StemCache {
+    /// Replaces `word` (ASCII lowercase) with its stem, truncating in place when the stem is a
+    /// prefix.
+    fn stem(&mut self, word: &mut String) {
+        let bytes = word.as_bytes();
+        if bytes.len() > SLOT_BYTES {
+            if let std::borrow::Cow::Owned(stem) = self.stemmer.stem(word) {
+                replace_with_stem(word, &stem);
+            }
+            return;
+        }
+        let mut hasher = rustc_hash::FxHasher::default();
+        std::hash::Hasher::write(&mut hasher, bytes);
+        let slot = &mut self.slots[std::hash::Hasher::finish(&hasher) as usize & (STEM_SLOTS - 1)];
+        if usize::from(slot.word_len) == bytes.len() && &slot.word[..bytes.len()] == bytes {
+            let stem = &slot.stem[..usize::from(slot.stem_len)];
+            // SAFETY: slots hold stems of ASCII words, which are ASCII.
+            replace_with_stem(word, unsafe { std::str::from_utf8_unchecked(stem) });
+            return;
+        }
+        let stem = self.stemmer.stem(word).into_owned();
+        if stem.len() <= SLOT_BYTES {
+            slot.word_len = bytes.len() as u8;
+            slot.word[..bytes.len()].copy_from_slice(bytes);
+            slot.stem_len = stem.len() as u8;
+            slot.stem[..stem.len()].copy_from_slice(stem.as_bytes());
+        }
+        replace_with_stem(word, &stem);
+    }
+}
+
+fn replace_with_stem(word: &mut String, stem: &str) {
+    if word.len() == stem.len() {
+        if word != stem {
+            word.clear();
+            word.push_str(stem);
+        }
+    } else if word.starts_with(stem) {
+        word.truncate(stem.len());
+    } else {
+        word.clear();
+        word.push_str(stem);
+    }
 }
 
 fn nfc_trim(source: &str) -> String {
@@ -158,6 +230,44 @@ mod tests {
         }
         push(start, text.len(), &mut tokens);
         tokens
+    }
+
+    #[test]
+    fn cached_stems_equal_the_stemmer() {
+        let stemmer = frostem::Stemmer::new(frostem::Algorithm::English);
+        let words = ["running", "runs", "memory", "safety", "agreed", "flies", "dying", "news", "rust", "a", "abc"];
+        for _ in 0..3 {
+            for word in words {
+                let mut cached = word.to_string();
+                STEMS.with_borrow_mut(|stems| stems.stem(&mut cached));
+                assert_eq!(cached, stemmer.stem(word), "{word}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_stem_cache_survives_collisions_and_long_words() {
+        // More distinct words than slots, so slots collide and are overwritten.
+        let stemmer = frostem::Stemmer::new(frostem::Algorithm::English);
+        let suffixes = ["", "s", "ing", "ed", "ly", "ness", "ation", "ies", "y", "ational"];
+        let mut state = 17u64;
+        let words: Vec<String> = (0..200_000)
+            .map(|i| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let len = 2 + (state % 18) as usize;
+                let stem: String = (0..len).map(|k| (b'a' + ((state >> (k % 60)) % 26) as u8) as char).collect();
+                format!("{stem}{}", suffixes[i % suffixes.len()])
+            })
+            .collect();
+        for _ in 0..2 {
+            for word in &words {
+                let mut cached = word.clone();
+                STEMS.with_borrow_mut(|stems| stems.stem(&mut cached));
+                assert_eq!(cached, stemmer.stem(word), "{word}");
+            }
+        }
     }
 
     #[test]

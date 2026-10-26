@@ -51,7 +51,7 @@ pub use manifest::{
 };
 pub use merge::{dead_ratio_target, select_tier};
 pub use ort_session::OrtModel;
-pub use prepare::{prepare, prepare_with_prefix, PreparedText, Token};
+pub use prepare::{analyze, prepare, prepare_with_prefix, tokenize, PreparedText, Token};
 pub use rerank::{NoopReranker, OrtReranker, Reranker, ScriptedReranker, RERANK_K};
 pub use retrieve::{DenseHits, Hit, Hits, RetrieveOptions, LEG_LIMIT};
 pub use static_embed::{StaticEmbedder, STATIC_MAX_TOKENS};
