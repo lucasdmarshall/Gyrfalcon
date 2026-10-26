@@ -10,7 +10,7 @@ use tantivy::tokenizer::{PreTokenizedString, Token as TantivyToken};
 use tantivy::{IndexReader, TantivyDocument, Term};
 
 use super::*;
-use crate::prepare::{prepare, prepare_with_prefix, PreparedText};
+use crate::prepare::{prepare, prepare_with_prefix};
 use crate::segment::ChunkRecord;
 
 struct Stats<'a>(&'a CollectionStats<'a>);
@@ -50,8 +50,11 @@ impl Tantivy {
         index.tokenizers().register("gyr-text-v1", tantivy::tokenizer::WhitespaceTokenizer::default());
         let mut writer: tantivy::IndexWriter = index.writer_with_num_threads(1, 64 << 20).unwrap();
         for chunk in chunks {
-            let tokens = chunk
-                .prepared
+            let prepared = match &chunk.prefix {
+                Some(prefix) => prepare_with_prefix(prefix, &chunk.body),
+                None => prepare(&chunk.body),
+            };
+            let tokens = prepared
                 .tokens
                 .iter()
                 .map(|t| TantivyToken {
@@ -63,7 +66,7 @@ impl Tantivy {
                 })
                 .collect();
             let mut doc = TantivyDocument::default();
-            doc.add_pre_tokenized_text(text, PreTokenizedString { text: chunk.prepared.embed_text.clone(), tokens });
+            doc.add_pre_tokenized_text(text, PreTokenizedString { text: prepared.embed_text, tokens });
             doc.add_u64(chunk_id, chunk.chunk_id);
             writer.add_document(doc).unwrap();
         }
@@ -102,21 +105,20 @@ impl Tantivy {
     }
 }
 
-fn record(chunk_id: u64, prepared: PreparedText, body: &str, prefix: Option<&str>) -> ChunkRecord {
-    ChunkRecord {
-        chunk_id,
-        doc_id: format!("doc-{chunk_id}"),
-        byte_start: chunk_id * 3,
-        byte_end: chunk_id * 3 + body.len() as u64,
-        body: body.to_string(),
-        prefix: prefix.map(str::to_string),
-        prepared,
-        vector: Vec::new(),
-    }
+fn record(chunk_id: u64, body: &str, prefix: Option<&str>) -> ChunkRecord {
+    let mut record = ChunkRecord::new(
+        format!("doc-{chunk_id}"),
+        chunk_id * 3,
+        chunk_id * 3 + body.len() as u64,
+        body.to_string(),
+        prefix.map(str::to_string),
+    );
+    record.chunk_id = chunk_id;
+    record
 }
 
 fn plain(chunk_id: u64, text: &str) -> ChunkRecord {
-    record(chunk_id, prepare(text), text, None)
+    record(chunk_id, text, None)
 }
 
 struct Rng(u64);
@@ -247,11 +249,7 @@ fn stored_chunks_roundtrip_across_blocks() {
         .map(|i| {
             let body = bodies[i % bodies.len()];
             let prefix = (i % 5 == 3).then_some("Context: a prefix.");
-            let prepared = match prefix {
-                Some(p) => prepare_with_prefix(p, body),
-                None => prepare(body),
-            };
-            record(1000 + i as u64, prepared, body, prefix)
+            record(1000 + i as u64, body, prefix)
         })
         .collect();
     let dir = tempfile::tempdir().unwrap();
@@ -278,7 +276,7 @@ fn stored_chunks_roundtrip_across_blocks() {
 #[test]
 fn an_empty_segment_opens_and_finds_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), &[]).unwrap();
+    write::<ChunkRecord>(dir.path(), &[]).unwrap();
     let segment = LexicalSegment::open(dir.path()).unwrap();
     assert!(segment.term_map().0.is_empty());
     let terms = TermMap::default();

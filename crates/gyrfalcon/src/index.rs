@@ -11,7 +11,7 @@ use crate::embed::{Embedder, HashEmbedder};
 use crate::epoch::{ReaderGuard, Reaper};
 use crate::error::{mismatch, Error, IncompatibleField, Result};
 use crate::manifest::{check_compatible, IndexConfig, Manifest};
-use crate::prepare::{prepare, prepare_with_prefix};
+
 use crate::rerank::{NoopReranker, Reranker};
 use crate::segment::{self, ChunkRecord, Segment};
 use crate::store::{self, Tombstones};
@@ -588,9 +588,8 @@ impl Index {
         for (doc, vector) in rows {
             self.check_width(vector.len())?;
             let row = quantize(self.shared.config.quantization, vector);
-            for mut record in self.chunk_records(std::slice::from_ref(doc))? {
-                record.vector = row.clone();
-                records.push(record);
+            for record in self.chunk_records(std::slice::from_ref(doc))? {
+                records.push(record.with_vector(0, row.clone()));
             }
         }
         self.seal_and_report(records)
@@ -683,9 +682,10 @@ impl Index {
         if state.pending.is_empty() {
             return Ok(());
         }
-        let records: Vec<ChunkRecord> = state.pending.records().cloned().collect();
         let id = self.shared.allocate_segment_id();
+        let records: Vec<&ChunkRecord> = state.pending.records().collect();
         segment::write_segment(&self.shared.root, id, &self.shared.config, &records)?;
+        drop(records);
         let sealed = Arc::new(Segment::open(&self.shared.root, id, &state.manifest)?);
         let change = Change {
             add: vec![sealed],
@@ -706,21 +706,7 @@ impl Index {
     }
 
     fn record(&self, doc: &Document, start: usize, end: usize, prefix: Option<String>) -> ChunkRecord {
-        let body = doc.text[start..end].to_string();
-        let prepared = match &prefix {
-            Some(prefix) => prepare_with_prefix(prefix, &body),
-            None => prepare(&body),
-        };
-        ChunkRecord {
-            chunk_id: 0,
-            doc_id: doc.doc_id.clone(),
-            byte_start: start as u64,
-            byte_end: end as u64,
-            body,
-            prefix,
-            prepared,
-            vector: Vec::new(),
-        }
+        ChunkRecord::new(doc.doc_id.clone(), start as u64, end as u64, doc.text[start..end].to_string(), prefix)
     }
 
     pub(crate) fn chunk_records(&self, docs: &[Document]) -> Result<Vec<ChunkRecord>> {
@@ -762,7 +748,8 @@ impl Index {
 
     fn embed_range(&self, records: &mut [ChunkRecord]) -> Result<()> {
         for batch in records.chunks_mut(EMBED_BATCH) {
-            let texts: Vec<String> = batch.iter().map(|r| r.prepared.embed_text.clone()).collect();
+            // The records keep no copy of the text they were embedded from.
+            let texts: Vec<String> = batch.iter_mut().map(|r| std::mem::take(&mut r.embed_text)).collect();
             let vectors = self.embedder.embed(&texts)?;
             if vectors.len() != batch.len() {
                 return Err(Error::Embed(format!("{} vectors for {} texts", vectors.len(), batch.len())));
@@ -831,22 +818,10 @@ impl Drop for Index {
     }
 }
 
-/// A logged chunk as a record, its tokens recomputed by `prepare`.
+/// A logged chunk as a record, its terms recomputed by `prepare`.
 fn record_from_wal(chunk: WalChunk) -> ChunkRecord {
-    let prepared = match &chunk.prefix {
-        Some(prefix) => prepare_with_prefix(prefix, &chunk.body),
-        None => prepare(&chunk.body),
-    };
-    ChunkRecord {
-        chunk_id: chunk.chunk_id,
-        doc_id: chunk.doc_id,
-        byte_start: chunk.byte_start,
-        byte_end: chunk.byte_end,
-        body: chunk.body,
-        prefix: chunk.prefix,
-        prepared,
-        vector: chunk.vector,
-    }
+    ChunkRecord::new(chunk.doc_id, chunk.byte_start, chunk.byte_end, chunk.body, chunk.prefix)
+        .with_vector(chunk.chunk_id, chunk.vector)
 }
 
 fn wal_chunk(record: &ChunkRecord) -> WalChunk {

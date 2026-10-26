@@ -12,6 +12,7 @@
 //!
 //! After seal none of these files change.
 
+use std::borrow::Borrow;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,7 @@ use crate::error::{Error, Result};
 use crate::keys::DocKeys;
 use crate::lexical::{self, CollectionStats, LexicalSegment, ScoredId, StoredChunk};
 use crate::manifest::{IndexConfig, Manifest};
-use crate::prepare::{PreparedText, Token};
+use crate::prepare::{prepare, prepare_with_prefix, TermCounts, Token};
 use crate::store::{self, Tombstones};
 use crate::vector::{self, VectorSegment};
 
@@ -46,9 +47,41 @@ pub struct ChunkRecord {
     pub byte_end: u64,
     pub body: String,
     pub prefix: Option<String>,
-    pub prepared: PreparedText,
+    /// What the embedder receives (`PreparedText::embed_text`); emptied once `vector` is set.
+    pub embed_text: String,
+    pub terms: TermCounts,
     /// The quantized row exactly as stored in `vectors.bin`.
     pub vector: Vec<u8>,
+}
+
+impl ChunkRecord {
+    /// Analyzes `body`, after `prefix` when there is one, into a record without a chunk id or
+    /// a vector.
+    pub fn new(doc_id: String, byte_start: u64, byte_end: u64, body: String, prefix: Option<String>) -> ChunkRecord {
+        let prepared = match &prefix {
+            Some(prefix) => prepare_with_prefix(prefix, &body),
+            None => prepare(&body),
+        };
+        ChunkRecord {
+            chunk_id: 0,
+            doc_id,
+            byte_start,
+            byte_end,
+            body,
+            prefix,
+            terms: TermCounts::from_tokens(&prepared.tokens),
+            embed_text: prepared.embed_text,
+            vector: Vec::new(),
+        }
+    }
+
+    /// A record whose row is already known (a logged or merged chunk): no text to embed.
+    pub fn with_vector(mut self, chunk_id: u64, vector: Vec<u8>) -> ChunkRecord {
+        self.chunk_id = chunk_id;
+        self.vector = vector;
+        self.embed_text = String::new();
+        self
+    }
 }
 
 /// A sealed segment opened for reading.
@@ -140,8 +173,13 @@ pub fn segment_dir(root: &Path, id: u64) -> PathBuf {
 
 /// Writes every file of a new segment directory and fsyncs it. `chunks` must be sorted by
 /// `chunk_id`. The directory is not referenced by any manifest until the caller publishes.
-pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[ChunkRecord]) -> Result<PathBuf> {
-    debug_assert!(chunks.windows(2).all(|w| w[0].chunk_id < w[1].chunk_id));
+pub fn write_segment<R: Borrow<ChunkRecord> + Sync>(
+    root: &Path,
+    id: u64,
+    config: &IndexConfig,
+    chunks: &[R],
+) -> Result<PathBuf> {
+    debug_assert!(chunks.windows(2).all(|w| w[0].borrow().chunk_id < w[1].borrow().chunk_id));
     let dir = segment_dir(root, id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
@@ -149,7 +187,7 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
     std::fs::create_dir_all(&dir)?;
 
     let row_len = config.dimension as usize * config.quantization.bytes_per_component();
-    if let Some(chunk) = chunks.iter().find(|c| c.vector.len() != row_len) {
+    if let Some(chunk) = chunks.iter().map(Borrow::borrow).find(|c| c.vector.len() != row_len) {
         return Err(Error::SegmentCorrupt(format!(
             "chunk {} has a {}-byte row, expected {row_len}",
             chunk.chunk_id,
@@ -161,18 +199,19 @@ pub fn write_segment(root: &Path, id: u64, config: &IndexConfig, chunks: &[Chunk
     let built = std::thread::scope(|scope| -> Result<lexical::Built> {
         let lexical = scope.spawn(|| lexical::write(&dir.join("lexical"), chunks));
         let codes = scope.spawn(|| {
-            let rows: Vec<&[u8]> = chunks.iter().map(|c| c.vector.as_slice()).collect();
+            let rows: Vec<&[u8]> = chunks.iter().map(|c| c.borrow().vector.as_slice()).collect();
             let codes = vector::encode_codes(config.quantization, config.dimension as usize, &rows);
             std::fs::write(dir.join("codes.bin"), codes)
         });
 
-        let ids: Vec<u64> = chunks.iter().map(|c| c.chunk_id).collect();
+        let ids: Vec<u64> = chunks.iter().map(|c| c.borrow().chunk_id).collect();
         store::write_synced(&dir.join("ids.bin"), &store::encode_ids(&ids))?;
-        let pairs: Vec<(&str, u64)> = chunks.iter().map(|c| (c.doc_id.as_str(), c.chunk_id)).collect();
+        let pairs: Vec<(&str, u64)> =
+            chunks.iter().map(Borrow::borrow).map(|c: &ChunkRecord| (c.doc_id.as_str(), c.chunk_id)).collect();
         store::write_synced(&dir.join("keys.bin"), &crate::keys::encode(&pairs))?;
         let mut vectors = Vec::with_capacity(chunks.len() * row_len);
         for chunk in chunks {
-            vectors.extend_from_slice(&chunk.vector);
+            vectors.extend_from_slice(&chunk.borrow().vector);
         }
         store::write_synced(&dir.join("vectors.bin"), &vectors)?;
 

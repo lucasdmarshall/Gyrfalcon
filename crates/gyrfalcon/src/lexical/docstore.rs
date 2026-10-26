@@ -9,6 +9,7 @@
 //! A record is `chunk_id u64, byte_start u64, byte_end u64`, the lengths of `doc_key`, `body`,
 //! and `prefix` as u32 (`u32::MAX` for no prefix), then those bytes.
 
+use std::borrow::Borrow;
 use std::path::Path;
 
 use memmap2::Mmap;
@@ -43,7 +44,7 @@ fn push_record(chunk: &ChunkRecord, out: &mut Vec<u8>) {
 }
 
 /// Encodes every chunk, in order, as one `docs.bin`.
-pub fn encode(chunks: &[ChunkRecord]) -> Vec<u8> {
+pub fn encode<R: Borrow<ChunkRecord>>(chunks: &[R]) -> Vec<u8> {
     // (first_doc, raw_len, packed bytes) per block.
     let mut blocks: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     let mut raw = Vec::with_capacity(2 * BLOCK_BYTES);
@@ -56,7 +57,7 @@ pub fn encode(chunks: &[ChunkRecord]) -> Vec<u8> {
         if raw.is_empty() {
             first = doc as u32;
         }
-        push_record(chunk, &mut raw);
+        push_record(chunk.borrow(), &mut raw);
         if raw.len() >= BLOCK_BYTES {
             flush(&mut raw, first);
         }

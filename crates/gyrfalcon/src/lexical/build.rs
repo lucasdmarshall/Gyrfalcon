@@ -4,6 +4,7 @@
 //! sort by term turns those into posting lists that are already in doc order. No token string
 //! is copied.
 
+use std::borrow::Borrow;
 use std::path::Path;
 
 use rustc_hash::FxHashMap;
@@ -31,42 +32,32 @@ struct Inverted<'a> {
     num_tokens: u64,
 }
 
-fn invert(chunks: &[ChunkRecord]) -> Result<Inverted<'_>> {
+fn invert<R: Borrow<ChunkRecord>>(chunks: &[R]) -> Result<Inverted<'_>> {
     if u32::try_from(chunks.len()).is_err() {
         return Err(Error::Lexical("a segment holds at most u32::MAX chunks".into()));
     }
-    let total: usize = chunks.iter().map(|c| c.prepared.tokens.len()).sum();
-    let mut ids: FxHashMap<&str, u32> = FxHashMap::with_capacity_and_hasher(total / 16, Default::default());
+    let total: usize = chunks.iter().map(|c| c.borrow().terms.len()).sum();
+    let mut ids: FxHashMap<&str, u32> = FxHashMap::with_capacity_and_hasher(total / 8, Default::default());
     let mut names: Vec<&str> = Vec::new();
     let mut df: Vec<u32> = Vec::new();
     // `(term, tf)` per doc, docs back to back; `ends[d]` closes doc `d`.
-    let mut pairs: Vec<(u32, u32)> = Vec::with_capacity(total / 2);
+    let mut pairs: Vec<(u32, u32)> = Vec::with_capacity(total);
     let mut ends: Vec<usize> = Vec::with_capacity(chunks.len());
     let mut norms = Vec::with_capacity(chunks.len());
-    let mut scratch: Vec<u32> = Vec::new();
     let mut num_tokens = 0u64;
     for chunk in chunks {
-        let tokens = &chunk.prepared.tokens;
-        num_tokens += tokens.len() as u64;
-        norms.push(fieldnorm_to_id(u32::try_from(tokens.len()).unwrap_or(u32::MAX)));
-        scratch.clear();
-        for token in tokens {
+        let terms = &chunk.borrow().terms;
+        num_tokens += u64::from(terms.num_tokens());
+        norms.push(fieldnorm_to_id(terms.num_tokens()));
+        for (term, tf) in terms.iter() {
             let next = names.len() as u32;
-            let id = *ids.entry(token.text.as_str()).or_insert_with(|| {
-                names.push(token.text.as_str());
+            let id = *ids.entry(term).or_insert_with(|| {
+                names.push(term);
                 df.push(0);
                 next
             });
-            scratch.push(id);
-        }
-        scratch.sort_unstable();
-        let mut at = 0;
-        while at < scratch.len() {
-            let term = scratch[at];
-            let run = scratch[at..].iter().take_while(|&&t| t == term).count();
-            pairs.push((term, run as u32));
-            df[term as usize] += 1;
-            at += run;
+            pairs.push((id, tf));
+            df[id as usize] += 1;
         }
         ends.push(pairs.len());
     }
@@ -94,7 +85,7 @@ fn invert(chunks: &[ChunkRecord]) -> Result<Inverted<'_>> {
 
 /// Writes `terms.dict`, `postings.bin`, `norms.bin`, and `docs.bin` under `dir`. The caller
 /// fsyncs the directory tree.
-pub fn write(dir: &Path, chunks: &[ChunkRecord]) -> Result<Built> {
+pub fn write<R: Borrow<ChunkRecord> + Sync>(dir: &Path, chunks: &[R]) -> Result<Built> {
     std::fs::create_dir_all(dir)?;
     std::thread::scope(|scope| {
         let docs = scope.spawn(|| std::fs::write(dir.join("docs.bin"), docstore::encode(chunks)));
@@ -104,7 +95,7 @@ pub fn write(dir: &Path, chunks: &[ChunkRecord]) -> Result<Built> {
     })
 }
 
-fn write_index(dir: &Path, chunks: &[ChunkRecord]) -> Result<Built> {
+fn write_index<R: Borrow<ChunkRecord>>(dir: &Path, chunks: &[R]) -> Result<Built> {
     let inverted = invert(chunks)?;
     let mut order: Vec<u32> = (0..inverted.names.len() as u32).collect();
     order.sort_unstable_by(|a, b| inverted.names[*a as usize].cmp(inverted.names[*b as usize]));

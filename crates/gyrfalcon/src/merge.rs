@@ -10,7 +10,6 @@ use std::time::Duration;
 use crate::error::Result;
 use crate::index::{Change, Index, Shared};
 use crate::manifest::{DEAD_RATIO_LIMIT, MAX_MERGE_CHUNKS, SEGMENTS_PER_TIER};
-use crate::prepare::{prepare, prepare_with_prefix};
 use crate::segment::{self, ChunkRecord, Segment};
 
 /// Picks the lowest tier holding at least 8 segments whose 8 smallest counts sum to at most
@@ -158,20 +157,11 @@ pub(crate) fn run_pass(shared: &Arc<Shared>, all: bool) -> Result<bool> {
                 continue;
             }
             let Ok(row) = input.ids.binary_search(&stored.chunk_id) else { continue };
-            let prepared = match &stored.prefix {
-                Some(prefix) => prepare_with_prefix(prefix, &stored.body),
-                None => prepare(&stored.body),
-            };
-            records.push(ChunkRecord {
-                chunk_id: stored.chunk_id,
-                doc_id: stored.doc_key,
-                byte_start: stored.byte_start,
-                byte_end: stored.byte_end,
-                body: stored.body,
-                prefix: stored.prefix,
-                prepared,
-                vector: vectors[row * row_len..(row + 1) * row_len].to_vec(),
-            });
+            let vector = vectors[row * row_len..(row + 1) * row_len].to_vec();
+            records.push(
+                ChunkRecord::new(stored.doc_key, stored.byte_start, stored.byte_end, stored.body, stored.prefix)
+                    .with_vector(stored.chunk_id, vector),
+            );
         }
     }
     records.sort_by_key(|r| r.chunk_id);
@@ -366,16 +356,11 @@ impl Index {
                     (seed >> 40) as f32 / (1u64 << 24) as f32 - 0.5
                 })
                 .collect();
-            records.push(ChunkRecord {
-                chunk_id: 0,
-                doc_id: format!("{token}-{i}"),
-                byte_start: 0,
-                byte_end: token.len() as u64,
-                body: token.to_string(),
-                prefix: None,
-                prepared: prepare(token),
-                vector: crate::vector::quantize(self.shared.config.quantization, &vector),
-            });
+            let row = crate::vector::quantize(self.shared.config.quantization, &vector);
+            records.push(
+                ChunkRecord::new(format!("{token}-{i}"), 0, token.len() as u64, token.to_string(), None)
+                    .with_vector(0, row),
+            );
         }
         let seal_every = std::mem::replace(&mut self.seal_every, n.max(1));
         let write_buffer = std::mem::replace(&mut self.write_buffer, 0);

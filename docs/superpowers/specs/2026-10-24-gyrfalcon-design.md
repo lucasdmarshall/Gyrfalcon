@@ -792,3 +792,24 @@ before the whole window. A blank line early in a window used to win, leaving a f
 next window that repeated most of this one; on the PDF queries nDCG@10 rose by 0.008 to 0.014,
 and BEIR lite did not move.
 
+
+### Memory: a mapped embeddings table and compact analyzed chunks (2026-10-26)
+
+A lite process read the 129 MB safetensors file and copied it into a second f32 table, and
+parsed `tokenizer.json` into both `tokenizers` and a JSON tree. Little-endian aligned f32 tables
+are now memory-mapped (a process pays for the rows it touches), the WordPiece fast path reads
+its vocabulary with a borrowing typed parse, and `tokenizers` is built only for the first text
+the fast path cannot take. A one-shot `gyr query` went from 324 ms and 293 MB RSS to 33 ms and
+27 MB; ids are unchanged on the 6,731 texts of `tests/static_tokenizer.rs`.
+
+A `ChunkRecord` held its full token list (a `String` and three offsets per token) and a second
+copy of its text until it was sealed, about 60 KB of heap per 2 KB chunk in the write buffer
+and in every merge, and sealing the buffer cloned every record. A record now keeps
+`TermCounts` (each distinct term once with its count, in two allocations, plus the token count:
+all BM25 needs), gives its embedding text to the embedder instead of copying it, and segments are
+written from borrowed records. Indexing 100 PDFs (4,962 chunks, one buffer seal): heap peak
+277 MB to 75 MB, peak RSS 440 MB to 246 MB. Segment bytes and BEIR scores are unchanged.
+
+Merges still re-analyze the stored text of every chunk they copy and hold the records of the
+whole merge at once, now about twice the text instead of thirty times; merging postings
+directly from the input segments would remove both.

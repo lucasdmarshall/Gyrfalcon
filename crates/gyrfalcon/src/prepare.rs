@@ -16,6 +16,57 @@ pub struct Token {
     pub offset_to: usize,
 }
 
+/// A chunk's analyzed text as an index needs it: each distinct term once, sorted, with its
+/// count, and the token count. Two allocations instead of one `String` per token, so a buffer
+/// or a merge holding many chunks costs about as much as their text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TermCounts {
+    /// The distinct terms, sorted, back to back.
+    text: Box<str>,
+    /// `(end of the term in text, count)` per term.
+    entries: Box<[(u32, u32)]>,
+    num_tokens: u32,
+}
+
+impl TermCounts {
+    pub fn from_tokens(tokens: &[Token]) -> TermCounts {
+        let mut terms: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+        terms.sort_unstable();
+        let mut text = String::with_capacity(terms.iter().map(|t| t.len()).sum());
+        let mut entries = Vec::new();
+        for run in terms.chunk_by(|a, b| a == b) {
+            text.push_str(run[0]);
+            entries.push((text.len() as u32, run.len() as u32));
+        }
+        // `text` may hold repeats' capacity; the box keeps only the distinct terms.
+        TermCounts {
+            text: text.into_boxed_str(),
+            entries: entries.into_boxed_slice(),
+            num_tokens: u32::try_from(tokens.len()).unwrap_or(u32::MAX),
+        }
+    }
+
+    /// Token occurrences, repeats included.
+    pub fn num_tokens(&self) -> u32 {
+        self.num_tokens
+    }
+
+    /// Distinct terms.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// `(term, count)` in term order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, u32)> + '_ {
+        let mut start = 0usize;
+        self.entries.iter().map(move |&(end, count)| {
+            let term = &self.text[start..end as usize];
+            start = end as usize;
+            (term, count)
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedText {
     /// NFC, trimmed, original case. This is what the embedder receives.

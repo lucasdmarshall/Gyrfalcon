@@ -39,15 +39,11 @@ impl Batch {
         let mut row_norms = Vec::with_capacity(records.len());
         let mut num_tokens = 0;
         for (row, record) in records.iter().enumerate() {
-            let tokens = &record.prepared.tokens;
-            num_tokens += tokens.len() as u64;
-            norms.push(lexical::fieldnorm_to_id(u32::try_from(tokens.len()).unwrap_or(u32::MAX)));
+            let terms = &record.terms;
+            num_tokens += u64::from(terms.num_tokens());
+            norms.push(lexical::fieldnorm_to_id(terms.num_tokens()));
             row_norms.push(vector::row_norm(quantization, &record.vector));
-            let mut counts: FxHashMap<&str, u32> = FxHashMap::default();
-            for token in tokens {
-                *counts.entry(token.text.as_str()).or_default() += 1;
-            }
-            for (term, tf) in counts {
+            for (term, tf) in terms.iter() {
                 // Allocate the key only for a term this batch has not seen.
                 match postings.get_mut(term) {
                     Some(list) => list.push((row as u32, tf)),
