@@ -1,0 +1,19 @@
+[package]
+name = "pdf-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone: the candidates' dependencies stay out of the Gyrfalcon workspace.
+[workspace]
+
+[dependencies]
+pdf_oxide = "0.3"
+unpdf = "0.50"
+pdf-extract = "0.12"
+oxidize-pdf = "5"
+lopdf = "0.46"
+serde_json = "1"
+
+[profile.release]
+debug = false
