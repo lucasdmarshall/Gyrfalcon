@@ -17,7 +17,7 @@ raw report plus a `summary.md` to `bench/reports/reproduce-<mode>-<timestamp>/`.
 
 | Mode | Produces | Time on a 4-vCPU VM | Downloads |
 |---|---|---|---|
-| `lite [RUNS]` | the [variance table](results.md#run-to-run-variance): nDCG@10, index time, p50 and p99 per dataset, median and range over `RUNS` runs | about 2.5 minutes per run after the first | models (about 400 MB with ONNX Runtime), eight BEIR sets (about 2 GB unpacked) |
+| `lite [RUNS]` | the [variance table](results.md#run-to-run-variance): nDCG@10, index time, p50 and p99 per dataset, median and range over `RUNS` runs | about 2.5 minutes per run after the first | models (about 400 MB with ONNX Runtime), eight BEIR sets (about 1.3 GB unpacked) |
 | `compare [CORES]` | the [head-to-head tables](results.md#head-to-head) for the lite embedder on SciFact, NFCorpus, ArguAna, and FiQA | several hours; the Python frameworks' FiQA cells dominate | the above, plus a Python environment from `bench/compare/requirements.txt` |
 
 Requirements: a Rust toolchain, `python3`, `pip`, and `curl`; `compare` also needs `taskset`

@@ -3,8 +3,8 @@
     {
       "dataset": "scifact",
       "docs": 5183,
-      "docs_per_sec": 14059.604868843066,
-      "index_seconds": 0.368644784,
+      "docs_per_sec": 15079.41894713251,
+      "index_seconds": 0.343713509,
       "queries": 300,
       "rerank": false,
       "results": [
@@ -12,8 +12,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.674074074074074,
           "ndcg_at_10": 0.7088063289765038,
-          "query_p50_ms": 1.800817,
-          "query_p99_ms": 2.645918,
+          "query_p50_ms": 1.62069,
+          "query_p99_ms": 2.842478,
           "recall_at_100": 0.9282222222222223
         }
       ],
@@ -22,8 +22,8 @@
     {
       "dataset": "nfcorpus",
       "docs": 3633,
-      "docs_per_sec": 12774.988528971042,
-      "index_seconds": 0.284383817,
+      "docs_per_sec": 13115.549081270949,
+      "index_seconds": 0.276999459,
       "queries": 323,
       "rerank": false,
       "results": [
@@ -31,8 +31,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.5494348616639639,
           "ndcg_at_10": 0.34352287346135096,
-          "query_p50_ms": 1.701233,
-          "query_p99_ms": 3.463498,
+          "query_p50_ms": 1.594006,
+          "query_p99_ms": 2.953851,
           "recall_at_100": 0.2888999637710271
         }
       ],
@@ -41,8 +41,8 @@
     {
       "dataset": "arguana",
       "docs": 8674,
-      "docs_per_sec": 14894.046118629094,
-      "index_seconds": 0.582380364,
+      "docs_per_sec": 20626.160535119554,
+      "index_seconds": 0.420533913,
       "queries": 1406,
       "rerank": false,
       "results": [
@@ -50,8 +50,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.4046428006954321,
           "ndcg_at_10": 0.49122865489132983,
-          "query_p50_ms": 2.054138,
-          "query_p99_ms": 3.671122,
+          "query_p50_ms": 2.118474,
+          "query_p99_ms": 3.3113650000000003,
           "recall_at_100": 0.9679943100995733
         }
       ],
@@ -60,8 +60,8 @@
     {
       "dataset": "fiqa",
       "docs": 57638,
-      "docs_per_sec": 33852.38260431507,
-      "index_seconds": 1.702627572,
+      "docs_per_sec": 29182.402298334273,
+      "index_seconds": 1.975094422,
       "queries": 648,
       "rerank": false,
       "results": [
@@ -69,8 +69,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.31838563100137174,
           "ndcg_at_10": 0.26586065675741455,
-          "query_p50_ms": 2.448434,
-          "query_p99_ms": 3.865971,
+          "query_p50_ms": 2.5701389999999997,
+          "query_p99_ms": 3.6574760000000004,
           "recall_at_100": 0.5513896425933461
         }
       ],
@@ -79,8 +79,8 @@
     {
       "dataset": "trec-covid",
       "docs": 171332,
-      "docs_per_sec": 12902.075211580079,
-      "index_seconds": 13.27941414,
+      "docs_per_sec": 13930.619666569615,
+      "index_seconds": 12.298950377,
       "queries": 50,
       "rerank": false,
       "results": [
@@ -88,8 +88,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.9283333333333332,
           "ndcg_at_10": 0.6797374399089415,
-          "query_p50_ms": 3.6204549999999998,
-          "query_p99_ms": 84.336622,
+          "query_p50_ms": 4.434439,
+          "query_p99_ms": 6.768673000000001,
           "recall_at_100": 0.11103000493172673
         }
       ],
@@ -98,8 +98,8 @@
     {
       "dataset": "scidocs",
       "docs": 25657,
-      "docs_per_sec": 22775.366297675522,
-      "index_seconds": 1.126524143,
+      "docs_per_sec": 21598.539120171095,
+      "index_seconds": 1.187904416,
       "queries": 1000,
       "rerank": false,
       "results": [
@@ -107,8 +107,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.28055198412698384,
           "ndcg_at_10": 0.16458821003880317,
-          "query_p50_ms": 2.198209,
-          "query_p99_ms": 4.874511,
+          "query_p50_ms": 2.197602,
+          "query_p99_ms": 4.490612,
           "recall_at_100": 0.3607833333333324
         }
       ],
@@ -117,8 +117,8 @@
     {
       "dataset": "quora",
       "docs": 522931,
-      "docs_per_sec": 78203.32134982671,
-      "index_seconds": 6.686813181,
+      "docs_per_sec": 77340.12015990539,
+      "index_seconds": 6.761445404,
       "queries": 10000,
       "rerank": false,
       "results": [
@@ -126,8 +126,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.8299372619047579,
           "ndcg_at_10": 0.8343980230480278,
-          "query_p50_ms": 5.6968749999999995,
-          "query_p99_ms": 10.795518000000001,
+          "query_p50_ms": 5.371481,
+          "query_p99_ms": 8.675614999999999,
           "recall_at_100": 0.9781017915071374
         }
       ],
@@ -136,8 +136,8 @@
     {
       "dataset": "webis-touche2020",
       "docs": 382545,
-      "docs_per_sec": 8597.037425413413,
-      "index_seconds": 44.497305417,
+      "docs_per_sec": 8328.55995762558,
+      "index_seconds": 45.931709917,
       "queries": 49,
       "rerank": false,
       "results": [
@@ -145,8 +145,8 @@
           "fusion": "configured",
           "mrr_at_10": 0.5429381276320051,
           "ndcg_at_10": 0.3183052541357152,
-          "query_p50_ms": 7.170081,
-          "query_p99_ms": 409.838564,
+          "query_p50_ms": 5.5662020000000005,
+          "query_p99_ms": 9.240342,
           "recall_at_100": 0.5534031797094919
         }
       ],
@@ -157,7 +157,7 @@
     "analyzer_id": "gyr-text-v2",
     "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
     "dimension": 512,
-    "git_revision": "d3dd62bbe23f680542a378d9c0565e7929c6cc0e",
+    "git_revision": "de491935b423dc67677743dbc3c4260d7403fc09",
     "model_id": "minishlab/potion-retrieval-32M",
     "ort_intra_threads": 4,
     "physical_cores": 4,

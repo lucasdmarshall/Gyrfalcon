@@ -129,9 +129,9 @@ These points affect how the comparison should be read. They are listed here rath
    its commit.
 7. **The machine is shared.** Cloud VMs have neighbors, so a single run can be slow for reasons
    outside the program; repeated runs are the defense. On TREC-COVID and Touché-2020, with about
-   50 queries each, p99 is in effect the slowest query, and a few queries there take 80 to 400 ms
-   in the first rule measured on a fresh index. The cause is not isolated yet
-   ([Results](results.md#run-to-run-variance)); p50 is the reliable figure for those sets.
+   50 queries each, p99 is in effect the slowest query and moves more between runs than p50 does.
+   Reports from before commit de49193 carry a p99 bug on those two sets (a query deleting merged
+   files inline), fixed since ([Results](results.md#run-to-run-variance)).
 8. **What is not measured.** End-to-end answer quality with an LLM, non-English text, collections
    above about half a million documents, GPUs, and per-leg quality of the other frameworks.
 

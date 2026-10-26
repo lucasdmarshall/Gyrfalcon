@@ -149,24 +149,25 @@ Five consecutive runs of the lite tier at the current commit, nothing else on th
 
 | Dataset | Queries | nDCG@10, all runs | Index s, median (range) | Query p50 ms, median (range) | Query p99 ms, median (range) |
 |---|---|---|---|---|---|
-| SciFact | 300 | 0.7088 | 0.37 (0.32 to 0.42) | 1.77 (1.72 to 1.85) | 4.06 (2.65 to 5.40) |
-| NFCorpus | 323 | 0.3435 | 0.28 (0.27 to 0.31) | 1.52 (1.47 to 1.70) | 2.63 (2.10 to 4.58) |
-| ArguAna | 1,406 | 0.4912 | 0.43 (0.39 to 0.58) | 2.05 (1.96 to 2.30) | 4.38 (3.67 to 5.37) |
-| FiQA | 648 | 0.2659 | 1.81 (1.70 to 2.02) | 2.66 (2.45 to 2.76) | 4.48 (3.87 to 4.90) |
-| TREC-COVID | 50 | 0.6797 | 12.97 (11.47 to 14.15) | 3.50 (2.99 to 3.73) | 84.34 (82.29 to 96.74) |
-| SciDocs | 1,000 | 0.1646 | 1.10 (1.06 to 1.21) | 2.26 (2.15 to 2.28) | 4.39 (4.13 to 4.87) |
-| Quora | 10,000 | 0.8344 | 6.81 (6.60 to 8.00) | 5.70 (5.64 to 6.02) | 9.81 (9.50 to 10.80) |
-| Touché-2020 | 49 | 0.3183 | 44.09 (41.95 to 45.30) | 5.22 (5.00 to 7.17) | 237.29 (207.74 to 409.84) |
+| SciFact | 300 | 0.7088 | 0.34 (0.30 to 0.42) | 1.62 (1.53 to 1.75) | 2.50 (2.01 to 2.84) |
+| NFCorpus | 323 | 0.3435 | 0.28 (0.26 to 0.35) | 1.59 (1.48 to 1.98) | 3.26 (2.30 to 3.84) |
+| ArguAna | 1,406 | 0.4912 | 0.43 (0.41 to 0.53) | 2.00 (1.87 to 2.12) | 3.90 (3.31 to 5.00) |
+| FiQA | 648 | 0.2659 | 1.74 (1.61 to 1.98) | 2.54 (2.40 to 2.62) | 4.02 (3.66 to 6.35) |
+| TREC-COVID | 50 | 0.6797 | 12.30 (12.06 to 12.51) | 3.83 (3.17 to 4.43) | 6.77 (5.25 to 11.57) |
+| SciDocs | 1,000 | 0.1646 | 1.16 (1.11 to 1.19) | 2.20 (2.10 to 2.25) | 4.02 (3.56 to 4.49) |
+| Quora | 10,000 | 0.8344 | 6.50 (6.12 to 6.98) | 5.39 (5.37 to 5.47) | 8.97 (8.68 to 9.44) |
+| Touché-2020 | 49 | 0.3183 | 45.93 (45.00 to 48.11) | 5.58 (4.96 to 7.23) | 11.61 (9.24 to 20.03) |
 
 - **Quality is deterministic.** nDCG@10 was identical to every digit in all five runs. The full
   tier is not bit-for-bit deterministic: its int8 model quantizes activations per batch, and
   SciFact moved between 0.742 and 0.748 across batching configurations.
-- **Latency is stable.** p50 varied by at most 1.25x across runs on seven of the eight sets, and
-  1.4x on Touché-2020.
-- **The p99 outliers on TREC-COVID and Touché-2020** come from a few slow queries in sets of
-  about 50, where p99 is effectively the slowest query. They appear only in the first rule measured
-  on a freshly built index: re-measured on the same index, the same queries have p99 of 5 to 13 ms.
-  The cause is not isolated yet. p50 is the reliable figure for those two sets.
+- **Latency is stable.** Across runs, p50 varied by at most 1.15x on five of the eight sets and
+  by at most 1.5x on the others. p99 stays under 12 ms on every set at the median.
+- **A p99 bug was found and fixed this way.** The first variance runs showed p99 of 84 ms on
+  TREC-COVID and 237 ms on Touché-2020. The cause: after a merge, the first query to finish
+  deleted the merged-away segment files on its own thread, while holding a lock other queries
+  wait on. Deletes now run on a background thread outside that lock (commit de49193), and the
+  same sets measure 6.8 ms and 11.6 ms. The table above is from after the fix.
 - **The other frameworks' cells were run once.** The gaps to them are 12 to 900 times in latency,
   well outside the variation measured here, but their own run-to-run variance is not measured.
 
