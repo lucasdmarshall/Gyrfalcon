@@ -879,3 +879,13 @@ dense query can reach. Hits return their metadata. The Python package takes
 `metadata={"tag": ["a", "b"], "year": 2024}` on writes and `filter={"tag": ["a", "b"]}` on
 search, the HTTP API `metadata` per document and `filter` on retrieve, and `gyr query` a
 repeatable `--filter key=value`.
+
+### Lite model candidates (2026-10-26)
+
+`sentence-transformers/static-retrieval-mrl-en-v1` (static, 1,024 Matryoshka dimensions,
+Apache-2.0) against potion-retrieval-32M in the lite tier, BEIR test nDCG@10 with the default
+fusion: SciFact 0.7054 vs 0.7092, NFCorpus 0.3363 vs 0.3410, ArguAna 0.4739 vs 0.4729, FiQA
+0.2675 vs 0.2689. Its dense leg alone was weaker on SciFact (0.598 vs 0.632) and NFCorpus and
+slightly stronger on FiQA (0.198 vs 0.189); truncated to 512 or 256 dimensions it lost a little
+more. Potion stays. `StaticEmbedder::truncated` (and `--dimension` on the CLI) remains for
+Matryoshka static models.
