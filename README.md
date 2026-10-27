@@ -12,7 +12,7 @@ No server, no vector database, no GPU, and a default tier that needs no model ru
 
 <br>
 
-[![CI](https://github.com/lucasdmarshall/Gyrfalcon-/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasdmarshall/Gyrfalcon-/actions/workflows/ci.yml)
+[![CI](https://github.com/lucasdmarshall/gyrfalcon/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasdmarshall/gyrfalcon/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-111418?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-111418?style=flat-square&logo=rust&logoColor=white)](docs/reference/rust-api.md)
 [![Python](https://img.shields.io/badge/python-3.9%2B-111418?style=flat-square&logo=python&logoColor=white)](docs/reference/python-api.md)
@@ -68,7 +68,7 @@ next search sees it. `update` replaces a document atomically; `delete` removes i
 <br>
 
 ```sh
-cargo install --git https://github.com/lucasdmarshall/Gyrfalcon- gyr-cli
+cargo install --git https://github.com/lucasdmarshall/gyrfalcon gyr-cli
 scripts/fetch-models.sh                            # from a clone: models into .models/
 
 gyr index ./my-index docs/ --metadata source=handbook
@@ -84,7 +84,7 @@ gyr serve ./my-index                               # HTTP API on 127.0.0.1:7700
 <br>
 
 ```sh
-cargo add gyrfalcon --git https://github.com/lucasdmarshall/Gyrfalcon-
+cargo add gyrfalcon --git https://github.com/lucasdmarshall/gyrfalcon
 ```
 
 ```rust

@@ -9,7 +9,7 @@ and without a metadata filter, updates, and deletes. It uses the `lite` tier.
 
 ```sh
 cargo new falcon-search && cd falcon-search
-cargo add gyrfalcon --git https://github.com/lucasdmarshall/Gyrfalcon-
+cargo add gyrfalcon --git https://github.com/lucasdmarshall/gyrfalcon
 ```
 
 The engine's dependencies are slow when built without optimization. Add this to your
