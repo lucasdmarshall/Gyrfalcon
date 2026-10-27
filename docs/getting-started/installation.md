@@ -46,8 +46,8 @@ export ORT_DYLIB_PATH=/path/to/libonnxruntime.so
 Needs a Rust toolchain (stable) and `maturin`.
 
 ```sh
-git clone https://github.com/lucasdmarshall/Gyrfalcon-
-cd Gyrfalcon-/crates/gyrfalcon-py
+git clone https://github.com/lucasdmarshall/gyrfalcon
+cd gyrfalcon/crates/gyrfalcon-py
 python -m venv .venv && . .venv/bin/activate
 pip install maturin
 maturin develop --release
@@ -80,8 +80,8 @@ Then set `GYR_MODELS=/opt/gyrfalcon-models` on the offline machine, or pass
 The crate is not on crates.io yet. Depend on it from Git:
 
 ```sh
-cargo add gyrfalcon --git https://github.com/lucasdmarshall/Gyrfalcon-
-cargo add gyrfalcon-ingest --git https://github.com/lucasdmarshall/Gyrfalcon-   # optional: PDF and HTML
+cargo add gyrfalcon --git https://github.com/lucasdmarshall/gyrfalcon
+cargo add gyrfalcon-ingest --git https://github.com/lucasdmarshall/gyrfalcon   # optional: PDF and HTML
 ```
 
 `gyrfalcon` is the engine. `gyrfalcon-ingest` turns PDF, HTML, and text files into text; add it
@@ -101,7 +101,7 @@ with the Python `ensure_model`, and pass the model directory to `Tier::open`.
 ## The `gyr` command line
 
 ```sh
-cargo install --git https://github.com/lucasdmarshall/Gyrfalcon- gyr-cli
+cargo install --git https://github.com/lucasdmarshall/gyrfalcon gyr-cli
 ```
 
 This installs `gyr`. From a clone, `cargo build --release` builds it at `target/release/gyr`.

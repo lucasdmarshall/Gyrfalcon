@@ -19,8 +19,8 @@ No C or C++ toolchain is needed: ONNX Runtime and PDFium are loaded at run time,
 ## Clone and build
 
 ```sh
-git clone https://github.com/lucasdmarshall/Gyrfalcon-
-cd Gyrfalcon-
+git clone https://github.com/lucasdmarshall/gyrfalcon
+cd gyrfalcon
 cargo build --release        # target/release/gyr
 ```
 
