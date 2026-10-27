@@ -65,7 +65,7 @@ pub fn decode_ids(bytes: &[u8]) -> Result<Vec<u64>> {
     if !bytes.len().is_multiple_of(8) {
         return Err(Error::SegmentCorrupt("id array length is not a multiple of 8".into()));
     }
-    Ok(bytes.chunks_exact(8).map(|b| u64::from_le_bytes(b.try_into().unwrap())).collect())
+    Ok(bytes.as_chunks::<8>().0.iter().map(|b| u64::from_le_bytes(*b)).collect())
 }
 
 /// The collection tombstone bitmap: a sorted set of dead chunk ids.

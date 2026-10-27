@@ -98,8 +98,7 @@ fn main() {
         let path = cache(suffix);
         if let Ok(bytes) = std::fs::read(&path) {
             let dim = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
-            let floats: Vec<f32> =
-                bytes[4..].chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+            let floats: Vec<f32> = bytes[4..].as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
             return floats.chunks(dim).map(|c| c.to_vec()).collect();
         }
         let t = Instant::now();

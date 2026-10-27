@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 306" width="1000" height="306" role="img" aria-label="Gyrfalcon against LlamaIndex, Haystack, and LangChain on FiQA: nDCG@10, index time, query latency, peak memory">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
+  .muted { fill: #59636e; }
+  .title { font-size: 17px; font-weight: 600; }
+  .sub { font-size: 12px; }
+  .label { font-size: 14px; }
+  .value { font-size: 13px; }
+  .strong { font-weight: 700; }
+  .ours { fill: #111418; }
+  .bar { fill: #c8ccd1; }
+  .rule { stroke: #d1d9e0; stroke-width: 1; }
+  @media (prefers-color-scheme: dark) {
+    text { fill: #e6edf3; }
+    .muted { fill: #9198a1; }
+    .ours { fill: #f0ede7; }
+    .bar { fill: #4a5059; }
+    .rule { stroke: #3d444d; }
+  }
+</style>
+<text x="100" y="107.0" text-anchor="end" class="label strong">Gyrfalcon</text>
+<text x="100" y="147.0" text-anchor="end" class="label">LlamaIndex</text>
+<text x="100" y="187.0" text-anchor="end" class="label">Haystack</text>
+<text x="100" y="227.0" text-anchor="end" class="label">LangChain</text>
+<text x="112.0" y="40" class="title">nDCG@10</text>
+<text x="112.0" y="60" class="sub muted">higher is better</text>
+<line x1="112.0" y1="82" x2="112.0" y2="238" class="rule"/>
+<rect x="112.0" y="92" width="128.5" height="20" rx="3" class="ours"/>
+<text x="248.5" y="107.0" class="value strong">0.266</text>
+<rect x="112.0" y="132" width="116.9" height="20" rx="3" class="bar"/>
+<text x="236.9" y="147.0" class="value muted">0.242</text>
+<rect x="112.0" y="172" width="115.5" height="20" rx="3" class="bar"/>
+<text x="235.5" y="187.0" class="value muted">0.239</text>
+<rect x="112.0" y="212" width="90.8" height="20" rx="3" class="bar"/>
+<text x="210.8" y="227.0" class="value muted">0.188</text>
+<text x="332.5" y="40" class="title">Index build</text>
+<text x="332.5" y="60" class="sub muted">seconds, lower is better</text>
+<line x1="332.5" y1="82" x2="332.5" y2="238" class="rule"/>
+<rect x="332.5" y="92" width="7.8" height="20" rx="3" class="ours"/>
+<text x="348.3" y="107.0" class="value strong">2.0 s</text>
+<rect x="332.5" y="132" width="128.5" height="20" rx="3" class="bar"/>
+<text x="469.0" y="147.0" class="value muted">32.8 s</text>
+<rect x="332.5" y="172" width="69.3" height="20" rx="3" class="bar"/>
+<text x="409.8" y="187.0" class="value muted">17.7 s</text>
+<rect x="332.5" y="212" width="80.7" height="20" rx="3" class="bar"/>
+<text x="421.2" y="227.0" class="value muted">20.6 s</text>
+<text x="553.0" y="40" class="title">Query p50</text>
+<text x="553.0" y="60" class="sub muted">milliseconds, lower is better</text>
+<line x1="553.0" y1="82" x2="553.0" y2="238" class="rule"/>
+<rect x="553.0" y="92" width="2.5" height="20" rx="3" class="ours"/>
+<text x="563.5" y="107.0" class="value strong">2.7 ms</text>
+<rect x="553.0" y="132" width="76.9" height="20" rx="3" class="bar"/>
+<text x="637.9" y="147.0" class="value muted">1,436 ms</text>
+<rect x="553.0" y="172" width="119.3" height="20" rx="3" class="bar"/>
+<text x="680.3" y="187.0" class="value muted">2,226 ms</text>
+<rect x="553.0" y="212" width="128.5" height="20" rx="3" class="bar"/>
+<text x="689.5" y="227.0" class="value muted">2,398 ms</text>
+<text x="773.5" y="40" class="title">Peak memory</text>
+<text x="773.5" y="60" class="sub muted">MB, lower is better</text>
+<line x1="773.5" y1="82" x2="773.5" y2="238" class="rule"/>
+<rect x="773.5" y="92" width="19.1" height="20" rx="3" class="ours"/>
+<text x="800.6" y="107.0" class="value strong">414 MB</text>
+<rect x="773.5" y="132" width="97.4" height="20" rx="3" class="bar"/>
+<text x="878.9" y="147.0" class="value muted">2,116 MB</text>
+<rect x="773.5" y="172" width="109.9" height="20" rx="3" class="bar"/>
+<text x="891.4" y="187.0" class="value muted">2,386 MB</text>
+<rect x="773.5" y="212" width="128.5" height="20" rx="3" class="bar"/>
+<text x="910.0" y="227.0" class="value muted">2,791 MB</text>
+<text x="112" y="290" class="sub muted">FiQA-2018: 57,638 documents, 648 queries. 4 vCPU, same embedding model (potion-retrieval-32M) for every system. Linear scales. Source: bench/results/.</text>
+</svg>

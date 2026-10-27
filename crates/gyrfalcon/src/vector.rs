@@ -101,8 +101,8 @@ pub fn quantize(quantization: Quantization, vector: &[f32]) -> Vec<u8> {
 /// The stored row as `f32`, for the exact scan.
 pub fn dequantize(quantization: Quantization, row: &[u8]) -> Vec<f32> {
     match quantization {
-        Quantization::F32 => row.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect(),
-        Quantization::F16 => row.chunks_exact(2).map(|b| f16_to_f32(u16::from_le_bytes([b[0], b[1]]))).collect(),
+        Quantization::F32 => row.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect(),
+        Quantization::F16 => row.as_chunks::<2>().0.iter().map(|b| f16_to_f32(u16::from_le_bytes(*b))).collect(),
         Quantization::I8 | Quantization::B1 => row.iter().map(|b| *b as i8 as f32).collect(),
     }
 }
