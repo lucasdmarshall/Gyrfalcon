@@ -66,7 +66,10 @@ embedding model is loaded. For Gyrfalcon it includes the background merge and th
 **Query latency.** Wall time of one complete search call per query: embedding the query, both
 retrieval legs, fusion, and returning the hits. Queries run one at a time, every test query once,
 after the index is built. p50 and p99 over all test queries. Model loading and index opening are
-excluded on every system.
+excluded on every system. The collection is in memory: the other frameworks keep their indexes in
+the Python heap by design, and Gyrfalcon's memory-mapped files are in the page cache because they
+were just written. Latency when Gyrfalcon reads from disk is measured separately
+([Results](results.md#reading-from-disk)).
 
 **Peak memory.** The process's peak resident set size (`ru_maxrss`). It includes the harness's
 own copy of the corpus and, for Gyrfalcon, memory-mapped file pages that were touched.
@@ -132,7 +135,10 @@ These points affect how the comparison should be read. They are listed here rath
    50 queries each, p99 is in effect the slowest query and moves more between runs than p50 does.
    Reports from before commit de49193 carry a p99 bug on those two sets (a query deleting merged
    files inline), fixed since ([Results](results.md#run-to-run-variance)).
-8. **What is not measured.** End-to-end answer quality with an LLM, non-English text, collections
+8. **Head-to-head latency is from memory.** Every system answered from RAM. Gyrfalcon from disk is
+   measured on its own; the other frameworks' time to load a persisted index from disk is not
+   measured.
+9. **What is not measured.** End-to-end answer quality with an LLM, non-English text, collections
    above about half a million documents, GPUs, and per-leg quality of the other frameworks.
 
 ---

@@ -171,6 +171,56 @@ Five consecutive runs of the lite tier at the current commit, nothing else on th
 - **The other frameworks' cells were run once.** The gaps to them are 12 to 900 times in latency,
   well outside the variation measured here, but their own run-to-run variance is not measured.
 
+## Reading from disk
+
+Every latency above is measured with the collection in memory. Gyrfalcon memory-maps its files,
+so after a restart, or when the collection does not fit in RAM, queries read from disk until the
+operating system has cached what they touch. `bench/cold_cache.py` measures that: it drops the
+collection's and the model's pages from the page cache (checked with `mincore`), then opens the
+collection and queries (`bench/results/2026-10-28-cold-cache`).
+
+Cloud block storage and a hard disk are emulated with `bench/slowfs.py`, a FUSE filesystem that adds
+a delay and a bandwidth cost to every read that misses the cache. The delays were set so that the
+measured random 4 KB read was 1.2 ms (typical of network block storage such as AWS gp3) and 8.4 ms
+(a 7,200 rpm disk). These are emulations: a real device also has queueing and IOPS limits.
+
+FiQA, lite tier, 79 MB collection plus the 131 MB model:
+
+| | In memory | Cloud disk, 1.2 ms per read | Hard disk, 8.4 ms per read |
+|---|---|---|---|
+| Open, then first query | | 0.28 s + 0.71 s | 1.0 s + 3.1 s |
+| First 10 queries, p50 | 1.6 ms | 30 ms | 119 ms |
+| All 648 queries from a cold start, p50 / p99 | 1.6 / 5.0 ms | 2.8 / 32 ms | 2.5 / 128 ms |
+| Every query from an empty cache, p50 | | 735 ms | 2,990 ms |
+
+Quora, lite tier, 370 MB collection:
+
+| | In memory | Cloud disk, 1.2 ms per read | Hard disk, 8.4 ms per read |
+|---|---|---|---|
+| Open, then first query | | 1.0 s + 1.9 s | 3.4 s + 7.1 s |
+| First 10 queries, p50 | 6.2 ms | 414 ms | 1,753 ms |
+| All 1,000 queries from a cold start, p50 / p99 | 6.2 / 11.8 ms | 12.7 / 193 ms | 11.9 / 522 ms |
+| Every query from an empty cache, p50 | | 1,797 ms | 7,131 ms |
+
+- **A running service is barely affected.** The first queries after a start pay for the disk; within
+  about ten queries the cache holds what queries touch, and the median over the run is within
+  a few milliseconds of the in-memory figure, even on a hard disk. The condition is RAM for the
+  collection plus the model.
+- **A collection larger than RAM, or a process per query, pays on every query.** FiQA then takes
+  0.7 s per query on cloud storage and 3 s on a hard disk.
+- **The cold path reads more than it needs.** A cold FiQA query reads about 36 MB: each random row
+  read pulls in its neighborhood (kernel read-around), and the reads are issued one after another.
+  Issuing them together and reading only the needed pages would cut both; this is not built yet.
+- **This VM's own disk** is network-backed and cached by its host, so its cold numbers depend on
+  what the host has cached: a cold FiQA query took 39 to 51 ms when the host had the blocks, and
+  the first open after a day took 4.4 s. The emulated profiles are repeatable; this disk is not.
+- **The FUSE layer** costs about 0.3 to 0.4 ms per read on its own (measured with zero added delay),
+  which is why faster SSDs are not emulated.
+
+The head-to-head frameworks keep their indexes in memory and rebuild them on every start in the
+benchmark setup (17.7 to 32.8 s for FiQA). Their time to load a persisted index from disk was not
+measured.
+
 ## Memory in more detail
 
 | Measurement | Value | Source |
