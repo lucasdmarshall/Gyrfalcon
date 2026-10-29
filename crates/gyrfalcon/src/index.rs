@@ -487,6 +487,11 @@ impl Index {
                 .ok_or_else(|| Error::SegmentCorrupt(format!("bad segment id {name}")))?;
             segments.push(Arc::new(Segment::open(path, id, &manifest)?));
         }
+        // The first query would otherwise fault these pages one at a time. Seal and merge open
+        // segments they just wrote, so they skip this; those pages are already cached.
+        for segment in &segments {
+            segment.warm()?;
+        }
         let config = manifest.config();
         // Logged writes since the last seal: their chunks become the buffer, their dead ids
         // join the tombstones, and chunk ids continue after the highest one logged.

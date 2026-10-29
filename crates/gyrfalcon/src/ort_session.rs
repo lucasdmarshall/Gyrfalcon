@@ -81,15 +81,17 @@ impl OrtModel {
                 }))
                 .map_err(model_error)?;
         }
-        let session = Session::builder(environment()?)
+        let mut builder = Session::builder(environment()?)
             .map_err(model_error)?
             .with_intra_threads(intra_threads())
             .map_err(model_error)?
             // Idle ort threads would otherwise spin on the cores retrieval needs.
             .with_intra_op_spinning(false)
-            .map_err(model_error)?
-            .commit_from_file(&model_path)
             .map_err(model_error)?;
+        // The session reads the weights as it loads. Doing it sequentially first keeps that
+        // read off a cold, random fault path when the runtime maps the file.
+        crate::warm::warm_file(&model_path)?;
+        let session = builder.commit_from_file(&model_path).map_err(model_error)?;
         let input_names = session.inputs().iter().map(|input| input.name().to_string()).collect();
         let output_width = session
             .outputs()

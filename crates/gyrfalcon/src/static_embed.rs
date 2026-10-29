@@ -18,12 +18,19 @@ fn model_error(err: impl std::fmt::Display) -> Error {
     Error::ModelUnavailable(err.to_string())
 }
 
-/// The embeddings table. Little-endian f32 data, 4-byte aligned in the file, is mapped rather
-/// than read, so a process pays for the rows of the tokens it meets instead of the whole table
-/// (129 MB for potion-retrieval-32M), and starting a process reads nothing up front. Other
-/// dtypes are converted into memory.
+/// The embeddings table. Little-endian f32 data, 4-byte aligned in the file, stays mapped.
+/// Open reads the file once (129 MB for potion-retrieval-32M) so a query's token rows are
+/// already cached; the rows themselves stay in the mapping. Other dtypes are converted into
+/// memory.
 enum Table {
-    Mapped { map: memmap2::Mmap, start: usize, len: usize },
+    /// `file` is the mapped safetensors file. A cold query reads token rows through it; opening
+    /// the path again would drop the page cache on FUSE.
+    Mapped {
+        map: memmap2::Mmap,
+        file: std::fs::File,
+        start: usize,
+        len: usize,
+    },
     Owned(Vec<f32>),
 }
 
@@ -31,7 +38,7 @@ impl Table {
     fn floats(&self) -> &[f32] {
         match self {
             Table::Owned(floats) => floats,
-            Table::Mapped { map, start, len } => {
+            Table::Mapped { map, start, len, .. } => {
                 let bytes = &map[*start..*start + *len * 4];
                 // SAFETY: `from_dir` checked that the range is in the file, 4-byte aligned, and
                 // little-endian f32 data on a little-endian target; every bit pattern is an f32.
@@ -92,6 +99,10 @@ fn embeddings_header(bytes: &[u8]) -> Result<(String, Vec<usize>, usize, usize)>
         return Err(model_error("embeddings tensor must be 2-D and inside the file"));
     }
     Ok((dtype, shape, start, end))
+}
+
+fn floats_of(bytes: &[u8]) -> Vec<f32> {
+    bytes.chunks_exact(4).map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])).collect()
 }
 
 fn f16_to_f32(half: u16) -> f32 {
@@ -157,6 +168,12 @@ impl StaticEmbedder {
         let file = std::fs::File::open(dir.join("model.safetensors")).map_err(model_error)?;
         // SAFETY: the model file is not modified while the process runs, as with segments.
         let map = unsafe { memmap2::Mmap::map(&file) }.map_err(model_error)?;
+        // Queries touch scattered rows. Fault them through this mapping: opening the file
+        // again to read it would drop the pages on FUSE, and the query would read them back.
+        crate::warm::warm_map(&map);
+        // Token rows are scattered. Once they are resident, a later miss should not pull the
+        // neighboring rows in with them.
+        let _ = map.advise(memmap2::Advice::Random);
         let (dtype, shape, start, end) = embeddings_header(&map)?;
         let len = shape[0] * shape[1];
         let data = &map[start..end];
@@ -165,7 +182,7 @@ impl StaticEmbedder {
         }
         let table = match dtype.as_str() {
             "F32" if cfg!(target_endian = "little") && (data.as_ptr() as usize).is_multiple_of(4) => {
-                Table::Mapped { map, start, len }
+                Table::Mapped { map, file, start, len }
             }
             "F32" => Table::Owned(data.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect()),
             "F16" => Table::Owned(data.as_chunks::<2>().0.iter().map(|b| f16_to_f32(u16::from_le_bytes(*b))).collect()),
@@ -240,12 +257,40 @@ impl StaticEmbedder {
     }
 
     fn pool(&self, ids: &[u32]) -> Vec<f32> {
+        let kept: Vec<u32> = ids.iter().copied().filter(|id| Some(*id) != self.unk_id).collect();
+        // A cold token row faults its page and the kernel's neighbors. Read those rows
+        // directly when any of them is still on disk; a resident table takes the mapped path.
+        if let Table::Mapped { map, file, start, .. } = &self.table {
+            let ranges: Vec<(u64, usize)> = kept
+                .iter()
+                .map(|id| {
+                    let at = *start as u64 + u64::from(*id) * self.width as u64 * 4;
+                    (at, self.dimension * 4)
+                })
+                .collect();
+            let as_usize: Vec<(usize, usize)> = ranges.iter().map(|(at, len)| (*at as usize, *len)).collect();
+            if !crate::warm::ranges_resident(map, &as_usize) {
+                if let Ok(buffers) = crate::warm::read_ranges(file, &ranges) {
+                    let rows: Vec<Vec<f32>> = buffers.iter().map(|buf| floats_of(buf)).collect();
+                    return Self::finish_pool(self.dimension, self.normalize, rows.iter().map(|row| row.as_slice()));
+                }
+            }
+        }
+        let dimension = self.dimension;
+        let normalize = self.normalize;
+        let width = self.width;
         let table = self.table.floats();
-        let mut out = vec![0f32; self.dimension];
+        let rows = kept.iter().filter_map(|id| {
+            let start = *id as usize * width;
+            table.get(start..start + dimension)
+        });
+        Self::finish_pool(dimension, normalize, rows)
+    }
+
+    fn finish_pool<'a>(dimension: usize, normalize: bool, rows: impl Iterator<Item = &'a [f32]>) -> Vec<f32> {
+        let mut out = vec![0f32; dimension];
         let mut count = 0usize;
-        for id in ids.iter().filter(|id| Some(**id) != self.unk_id) {
-            let start = *id as usize * self.width;
-            let Some(row) = table.get(start..start + self.dimension) else { continue };
+        for row in rows {
             for (o, v) in out.iter_mut().zip(row) {
                 *o += v;
             }
@@ -254,7 +299,7 @@ impl StaticEmbedder {
         if count > 0 {
             out.iter_mut().for_each(|v| *v /= count as f32);
         }
-        if self.normalize {
+        if normalize {
             let norm = out.iter().map(|v| v * v).sum::<f32>().sqrt();
             if norm > 0.0 {
                 out.iter_mut().for_each(|v| *v /= norm);

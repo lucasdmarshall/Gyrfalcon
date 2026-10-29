@@ -175,6 +175,15 @@ impl Segment {
         let vector = VectorSegment::open(&dir, meta.quantization, meta.dimension as usize)?;
         Ok(Segment { id, dir, meta, ids, keys, lexical, vector })
     }
+
+    /// Faults the mapped search files in order. Seal and merge call `open` on files they just
+    /// wrote, which are already cached, so only a process open (`Index::from_manifest`) warms.
+    pub fn warm(&self) -> Result<()> {
+        self.keys.warm();
+        self.lexical.warm();
+        self.vector.warm();
+        Ok(())
+    }
 }
 
 pub fn segment_dir(root: &Path, id: u64) -> PathBuf {

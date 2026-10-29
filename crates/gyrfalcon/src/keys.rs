@@ -78,6 +78,11 @@ impl DocKeys {
         Ok(keys)
     }
 
+    /// Faults the mapping so a later lookup does not wait on the disk.
+    pub(crate) fn warm(&self) {
+        crate::warm::warm_map(&self.map);
+    }
+
     fn chunk_id(&self, at: usize) -> u64 {
         let offset = HEADER + at * 8;
         u64::from_le_bytes(self.map[offset..offset + 8].try_into().unwrap())
