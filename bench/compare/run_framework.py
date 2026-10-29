@@ -1,15 +1,17 @@
 """One framework, one dataset, one embedder: build the framework's standard hybrid retriever
 (BM25 + dense, fused), time it, run every test query, and write a run file plus a JSON report.
 
-    python run_framework.py FRAMEWORK BEIR_DIR EMBEDDER THREADS OUT_PREFIX
+    python run_framework.py FRAMEWORK BEIR_DIR EMBEDDER THREADS OUT_PREFIX [MAX_QUERIES] [SEED]
 
 FRAMEWORK is llamaindex, langchain, or haystack; EMBEDDER is bge-small or potion.
+MAX_QUERIES and SEED are optional. When MAX_QUERIES is smaller than the judged set, only that
+fixed-seed sample is indexed against and scored. The corpus is always the full dataset.
 """
 import json
 import sys
 import time
 
-from common import Embedder, evaluate, load_beir, timed_queries, write_run
+from common import Embedder, evaluate, load_beir, subsample_queries, timed_queries, write_run
 
 DEPTH = 100
 
@@ -105,7 +107,11 @@ def haystack(docs, embedder):
 
 def main():
     framework, dataset, embedder_name, threads, out = sys.argv[1:6]
+    # Optional: MAX_QUERIES SEED. Absent, zero, or larger than the judged set keeps every query.
+    max_queries = int(sys.argv[6]) if len(sys.argv) > 6 else 0
+    seed = int(sys.argv[7]) if len(sys.argv) > 7 else 20261029
     docs, queries, qrels = load_beir(dataset)
+    queries, sample = subsample_queries(queries, max_queries, seed)
     embedder = Embedder(embedder_name, int(threads))
     embedder.embed(["warm up the model"])
     started = time.perf_counter()
@@ -124,6 +130,8 @@ def main():
         **latency,
         **evaluate(run, qrels, queries),
     }
+    if sample is not None:
+        report["subsample"] = sample
     json.dump(report, open(out + ".json", "w"), indent=1)
     print(json.dumps(report))
 

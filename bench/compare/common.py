@@ -8,6 +8,7 @@ query id ignored (ArguAna).
 import json
 import math
 import os
+import random
 import time
 
 import numpy as np
@@ -33,6 +34,27 @@ def load_beir(path):
             queries.append((q["_id"], q["text"]))
     queries.sort()
     return docs, queries, qrels
+
+
+def subsample_queries(queries, max_queries, seed):
+    """Keep every judged query, or a fixed-seed sample when the full set is too slow.
+
+    `queries` is the sorted `(id, text)` list from `load_beir`. The sample is drawn with
+    `random.Random(seed).sample` and then sorted by id, so the ids do not depend on how
+    `sample` orders its output. Returns `(selected, meta)`. `meta` is `None` when every
+    query is kept. Callers must record `meta["query_ids"]`: that list is the sample, and
+    a later Python cannot be assumed to draw the same ids from the seed alone.
+    """
+    if not max_queries or max_queries >= len(queries):
+        return queries, None
+    chosen = random.Random(seed).sample(queries, max_queries)
+    chosen.sort()
+    return chosen, {
+        "max_queries": max_queries,
+        "seed": seed,
+        "population": len(queries),
+        "query_ids": [qid for qid, _ in chosen],
+    }
 
 
 class Embedder:

@@ -17,6 +17,15 @@ Every cell is one process pinned with `taskset` to N cores, with thread pools ca
 RSS is that process's `ru_maxrss`. All run files are scored by `common.evaluate` (pytrec_eval
 nDCG@10 with linear gain, recall@100), which reproduces `gyr bench beir` to 1e-15.
 
+A full judged set that is too slow to query can be cut to a fixed-seed sample. The sample is
+drawn from the sorted judged queries with `random.Random(seed).sample`, then sorted by id.
+The report records `subsample.query_ids`; those ids are the sample. `gyr bench beir` still
+runs every judged query, and `compare.py` scores the sample out of that run file. Its latency
+fields stay the full-split numbers (`gyr_latency_is_full_split`).
+
+    python run_framework.py haystack BEIR_DIR potion 4 OUT_PREFIX 200 20261029
+    python compare.py OUT_DIR --datasets quora --systems llamaindex --max-queries 200 --seed 20261029
+
     python -m venv .venv-compare
     .venv-compare/bin/pip install fastembed model2vec psutil llama-index-core \
         llama-index-retrievers-bm25 langchain-core langchain-community rank_bm25 haystack-ai

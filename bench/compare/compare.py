@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 
-from common import evaluate, load_beir, read_run
+from common import evaluate, load_beir, read_run, subsample_queries
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -48,6 +48,9 @@ def main():
     parser.add_argument("--datasets", default="scifact,nfcorpus,arguana,fiqa")
     parser.add_argument("--embedders", default="potion")
     parser.add_argument("--systems", default="gyrfalcon,llamaindex,langchain,haystack")
+    parser.add_argument("--max-queries", type=int, default=0,
+                        help="Score a fixed-seed sample when this is smaller than the judged set. 0 keeps every query.")
+    parser.add_argument("--seed", type=int, default=20261029)
     args = parser.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
     results_path = os.path.join(args.out_dir, "results.jsonl")
@@ -62,6 +65,7 @@ def main():
             for dataset in args.datasets.split(","):
                 beir = os.path.join(ROOT, ".data", "beir", dataset)
                 _, queries, qrels = load_beir(beir)
+                queries, sample = subsample_queries(queries, args.max_queries, args.seed)
                 for system in args.systems.split(","):
                     key = (system, dataset, embedder, cores)
                     if key in done:
@@ -76,6 +80,8 @@ def main():
                     else:
                         command = [PYTHON, os.path.join(HERE, "run_framework.py"), system, beir, embedder,
                                    str(cores), prefix]
+                        if sample is not None:
+                            command += [str(args.max_queries), str(args.seed)]
                     measured = run_cell(command, cores, prefix + ".log")
                     if measured["code"] != 0:
                         print(f"FAILED {key}, see {prefix}.log", flush=True)
@@ -95,7 +101,14 @@ def main():
                         run = read_run(prefix + ".tsv")
                     report.update(evaluate(run, qrels, queries))
                     report.update(measured)
-                    report.update({"system": system, "dataset": dataset, "embedder": embedder, "threads": cores})
+                    report.update({"system": system, "dataset": dataset, "embedder": embedder, "threads": cores,
+                                   "queries": len(queries)})
+                    if sample is not None:
+                        report["subsample"] = sample
+                        if system == "gyrfalcon":
+                            # `gyr bench beir` still runs the full split. nDCG here is the sample;
+                            # the latency copied from its report is the full split.
+                            report["gyr_latency_is_full_split"] = True
                     with open(results_path, "a") as f:
                         f.write(json.dumps(report) + "\n")
                     print(json.dumps({k: report[k] for k in ["system", "dataset", "embedder", "threads",
