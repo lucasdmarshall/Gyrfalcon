@@ -9,6 +9,12 @@ embedder object (`common.Embedder`), so differences come from the framework, not
 | LlamaIndex | `BM25Retriever` (bm25s, English stemming) | `VectorStoreIndex` (in memory) | `QueryFusionRetriever`, reciprocal rank |
 | LangChain | `BM25Retriever` (rank_bm25) | `InMemoryVectorStore` | `EnsembleRetriever`, weighted RRF |
 | Haystack | `InMemoryBM25Retriever` | `InMemoryEmbeddingRetriever` | `DocumentJoiner`, RRF |
+| `langchain-stem` | the LangChain retriever, with lowercase, `\b\w\w+\b`, and an English Snowball stemmer | same as LangChain | same as LangChain |
+| `haystack-stem` | Haystack's own BM25 regex, then the same stemmer | same as Haystack | same as Haystack |
+
+`langchain-stem` and `haystack-stem` sit beside the defaults. They do not replace them.
+LlamaIndex's default already stems, so it has no stem variant. Numbers:
+`bench/results/2026-10-29-tuned-baselines`.
 
 Embedders: `potion` (Model2Vec `potion-retrieval-32M`, Gyrfalcon's lite tier) and `bge-small`
 (`BAAI/bge-small-en-v1.5` ONNX through fastembed; Gyrfalcon's full tier runs it through ort).

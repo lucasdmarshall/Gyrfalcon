@@ -3,17 +3,41 @@
 
     python run_framework.py FRAMEWORK BEIR_DIR EMBEDDER THREADS OUT_PREFIX [MAX_QUERIES] [SEED]
 
-FRAMEWORK is llamaindex, langchain, or haystack; EMBEDDER is bge-small or potion.
+FRAMEWORK is llamaindex, langchain, haystack, langchain-stem, or haystack-stem; EMBEDDER is
+bge-small or potion. The `-stem` variants keep the same fusion and dense store as the library
+default and change only the BM25 tokenizer: lowercase, the framework's own token pattern, then
+an English Snowball stemmer. That choice was not fit on any score. LlamaIndex's default already
+stems, so it has no second variant.
 MAX_QUERIES and SEED are optional. When MAX_QUERIES is smaller than the judged set, only that
 fixed-seed sample is indexed against and scored. The corpus is always the full dataset.
 """
 import json
+import re
 import sys
 import time
 
 from common import Embedder, evaluate, load_beir, subsample_queries, timed_queries, write_run
 
 DEPTH = 100
+# Same word pattern LlamaIndex's BM25 default uses. Not chosen from a score.
+_WORD = re.compile(r"(?u)\b\w\w+\b")
+
+
+_STEM = None
+
+
+def _stemmer():
+    global _STEM
+    if _STEM is None:
+        import Stemmer
+
+        _STEM = Stemmer.Stemmer("english")
+    return _STEM
+
+
+def stem_tokens(text: str) -> list:
+    """Lowercase, word tokens, English Snowball stem. For the LangChain tuned cell."""
+    return list(_stemmer().stemWords(_WORD.findall(text.lower())))
 
 
 def llamaindex(docs, embedder):
@@ -51,7 +75,7 @@ def llamaindex(docs, embedder):
     return lambda text: [hit.node.node_id for hit in fused.retrieve(text)]
 
 
-def langchain(docs, embedder):
+def langchain(docs, embedder, preprocess=None):
     from langchain_classic.retrievers import EnsembleRetriever
     from langchain_community.retrievers import BM25Retriever
     from langchain_core.documents import Document
@@ -67,12 +91,15 @@ def langchain(docs, embedder):
 
     documents = [Document(page_content=text, metadata={"id": doc_id}) for doc_id, text in docs]
     store = InMemoryVectorStore.from_documents(documents, embedding=Adapter())
-    bm25 = BM25Retriever.from_documents(documents, k=DEPTH)
+    if preprocess is None:
+        bm25 = BM25Retriever.from_documents(documents, k=DEPTH)
+    else:
+        bm25 = BM25Retriever.from_documents(documents, k=DEPTH, preprocess_func=preprocess)
     fused = EnsembleRetriever(retrievers=[bm25, store.as_retriever(search_kwargs={"k": DEPTH})], weights=[0.5, 0.5])
     return lambda text: [d.metadata["id"] for d in fused.invoke(text)][:DEPTH]
 
 
-def haystack(docs, embedder):
+def haystack(docs, embedder, stem=False):
     from haystack import Document, Pipeline, component
     from haystack.components.joiners import DocumentJoiner
     from haystack.components.retrievers.in_memory import InMemoryBM25Retriever, InMemoryEmbeddingRetriever
@@ -85,6 +112,16 @@ def haystack(docs, embedder):
             return {"embedding": embedder.embed([text])[0].tolist()}
 
     store = InMemoryDocumentStore()
+    if stem:
+        # Haystack already lowercases, then applies its own BM25 regex. Stem those tokens
+        # and leave the regex alone, so this cell differs from the default only by stemming.
+        pattern = re.compile(store.bm25_tokenization_regex)
+        stemmer = _stemmer()
+
+        def stemmed(text, pattern=pattern, stemmer=stemmer):
+            return list(stemmer.stemWords(pattern.findall(text)))
+
+        store.tokenizer = stemmed
     vectors = embedder.embed([text for _, text in docs])
     store.write_documents(
         [Document(id=doc_id, content=text, embedding=v.tolist()) for (doc_id, text), v in zip(docs, vectors)]
@@ -115,7 +152,14 @@ def main():
     embedder = Embedder(embedder_name, int(threads))
     embedder.embed(["warm up the model"])
     started = time.perf_counter()
-    search = {"llamaindex": llamaindex, "langchain": langchain, "haystack": haystack}[framework](docs, embedder)
+    builders = {
+        "llamaindex": llamaindex,
+        "langchain": langchain,
+        "haystack": haystack,
+        "langchain-stem": lambda docs, embedder: langchain(docs, embedder, preprocess=stem_tokens),
+        "haystack-stem": lambda docs, embedder: haystack(docs, embedder, stem=True),
+    }
+    search = builders[framework](docs, embedder)
     index_seconds = time.perf_counter() - started
     print(f"indexed {len(docs)} docs in {index_seconds:.1f}s, querying {len(queries)}", file=sys.stderr, flush=True)
     run, latency = timed_queries(queries, search)

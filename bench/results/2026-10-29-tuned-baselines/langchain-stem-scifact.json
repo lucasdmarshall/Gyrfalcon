@@ -1,0 +1,14 @@
+{
+ "system": "langchain-stem",
+ "dataset": "scifact",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 5183,
+ "queries": 300,
+ "index_seconds": 2.288364087995433,
+ "query_p50_ms": 64.72350200056098,
+ "query_p99_ms": 76.06913700146833,
+ "query_mean_ms": 65.41427076355224,
+ "ndcg_at_10": 0.6904753450733199,
+ "recall_at_100": 0.9608888888888888
+}
