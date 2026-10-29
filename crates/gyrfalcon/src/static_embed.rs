@@ -19,9 +19,9 @@ fn model_error(err: impl std::fmt::Display) -> Error {
 }
 
 /// The embeddings table. Little-endian f32 data, 4-byte aligned in the file, stays mapped.
-/// Open reads the file once (129 MB for potion-retrieval-32M) so a query's token rows are
-/// already cached; the rows themselves stay in the mapping. Other dtypes are converted into
-/// memory.
+/// `Warmup::Eager` reads the file once (129 MB for potion-retrieval-32M) so a query's token
+/// rows are already cached; the rows themselves stay in the mapping. A cold query reads the
+/// rows it needs from the same file. Other dtypes are converted into memory.
 enum Table {
     /// `file` is the mapped safetensors file. A cold query reads token rows through it; opening
     /// the path again would drop the page cache on FUSE.
@@ -168,12 +168,6 @@ impl StaticEmbedder {
         let file = std::fs::File::open(dir.join("model.safetensors")).map_err(model_error)?;
         // SAFETY: the model file is not modified while the process runs, as with segments.
         let map = unsafe { memmap2::Mmap::map(&file) }.map_err(model_error)?;
-        // Queries touch scattered rows. Fault them through this mapping: opening the file
-        // again to read it would drop the pages on FUSE, and the query would read them back.
-        crate::warm::warm_map(&map);
-        // Token rows are scattered. Once they are resident, a later miss should not pull the
-        // neighboring rows in with them.
-        let _ = map.advise(memmap2::Advice::Random);
         let (dtype, shape, start, end) = embeddings_header(&map)?;
         let len = shape[0] * shape[1];
         let data = &map[start..end];
@@ -309,7 +303,23 @@ impl StaticEmbedder {
     }
 }
 
+impl StaticEmbedder {
+    /// Faults the mapped table through the mapping search already holds. A second open would
+    /// drop a FUSE page cache. After the pages are resident, a later miss does not pull the
+    /// neighboring token rows in with it.
+    pub fn warm(&self) {
+        if let Table::Mapped { map, .. } = &self.table {
+            crate::warm::warm_map(map);
+            let _ = map.advise(memmap2::Advice::Random);
+        }
+    }
+}
+
 impl Embedder for StaticEmbedder {
+    fn warm(&self) {
+        StaticEmbedder::warm(self);
+    }
+
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
         if texts.len() < 64 || threads == 1 {

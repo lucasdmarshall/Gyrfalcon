@@ -60,8 +60,17 @@ impl OrtModel {
         OrtModel::load_with(dir, None)
     }
 
+    /// `load`, optionally reading the weights sequentially before the session maps them.
+    pub fn load_prefetch(dir: &Path, prefetch: bool) -> Result<OrtModel> {
+        OrtModel::load_with_prefetch(dir, None, prefetch)
+    }
+
     /// `load` with a tokenizer-enforced token budget per input (a pair counts as one input).
     pub fn load_with(dir: &Path, max_tokens: Option<usize>) -> Result<OrtModel> {
+        OrtModel::load_with_prefetch(dir, max_tokens, true)
+    }
+
+    fn load_with_prefetch(dir: &Path, max_tokens: Option<usize>, prefetch: bool) -> Result<OrtModel> {
         let model_path = ["model.onnx", "onnx/model.onnx"]
             .iter()
             .map(|name| dir.join(name))
@@ -89,8 +98,11 @@ impl OrtModel {
             .with_intra_op_spinning(false)
             .map_err(model_error)?;
         // The session reads the weights as it loads. Doing it sequentially first keeps that
-        // read off a cold, random fault path when the runtime maps the file.
-        crate::warm::warm_file(&model_path)?;
+        // read off a cold, random fault path when the runtime maps the file. `none` and
+        // `background` skip it: the session load is the read, and it cannot return earlier.
+        if prefetch {
+            crate::warm::warm_file(&model_path)?;
+        }
         let session = builder.commit_from_file(&model_path).map_err(model_error)?;
         let input_names = session.inputs().iter().map(|input| input.name().to_string()).collect();
         let output_width = session

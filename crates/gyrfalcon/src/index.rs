@@ -406,6 +406,10 @@ pub struct Index {
     /// How retrieve combines the legs. Rescore with dense weight 0.2 unless set.
     pub fusion: crate::fuse::Fusion,
     pub(crate) last_report: IndexReport,
+    /// How this open was asked to fault mapped search files.
+    warm_mode: crate::warm::Warmup,
+    /// `Warmup::Background` reads on this thread. Drop joins it.
+    warm_job: Mutex<Option<std::thread::JoinHandle<()>>>,
     _lock: WriterLock,
     tempdir: Option<tempfile::TempDir>,
 }
@@ -440,11 +444,19 @@ impl Index {
     }
 
     pub fn open(path: &Path, expected: &IndexConfig) -> Result<Index> {
+        Index::open_with_warmup(path, expected, crate::warm::Warmup::Eager)
+    }
+
+    /// `open`, faulting mapped search files according to `warmup`. The embedder attached later
+    /// is included when the caller invokes [`Index::warmup`] again after `set_embedder`.
+    pub fn open_with_warmup(path: &Path, expected: &IndexConfig, warmup: crate::warm::Warmup) -> Result<Index> {
         let mut opens = 0;
         let manifest = Index::open_counting(path, expected, &mut opens)?;
         let lock = WriterLock::acquire(path)?;
         remove_unreferenced(path, &manifest)?;
-        Index::from_manifest(path, manifest, lock)
+        let mut index = Index::from_manifest(path, manifest, lock)?;
+        index.warmup(warmup)?;
+        Ok(index)
     }
 
     /// Opens with an embedding session. The session's output width must equal
@@ -486,11 +498,6 @@ impl Index {
             let id = store::parse_segment_name(name)
                 .ok_or_else(|| Error::SegmentCorrupt(format!("bad segment id {name}")))?;
             segments.push(Arc::new(Segment::open(path, id, &manifest)?));
-        }
-        // The first query would otherwise fault these pages one at a time. Seal and merge open
-        // segments they just wrote, so they skip this; those pages are already cached.
-        for segment in &segments {
-            segment.warm()?;
         }
         let config = manifest.config();
         // Logged writes since the last seal: their chunks become the buffer, their dead ids
@@ -535,6 +542,8 @@ impl Index {
             pause_merge_after_copy: false,
             deleter_fail_times: 0,
             last_report: IndexReport::default(),
+            warm_mode: crate::warm::Warmup::None,
+            warm_job: Mutex::new(None),
             _lock: lock,
             tempdir: None,
         })
@@ -573,6 +582,45 @@ impl Index {
     /// Replaces the embedder. Its width is checked against the manifest on every batch.
     pub fn set_embedder(&mut self, embedder: Box<dyn Embedder>) {
         self.embedder = Arc::from(embedder);
+    }
+
+    /// The warmup this index was last asked for: `none`, `background`, or `eager`.
+    pub fn warm_name(&self) -> &'static str {
+        self.warm_mode.name()
+    }
+
+    /// Faults mapped segment files and the embedding table.
+    ///
+    /// `Eager` finishes before returning. `Background` returns after starting a thread; queries
+    /// until that thread finishes use exact-row reads where pages are missing. `None` does not
+    /// read ahead. A later call joins any background read still running.
+    pub fn warmup(&mut self, mode: crate::warm::Warmup) -> Result<()> {
+        self.wait_for_warm();
+        self.warm_mode = mode;
+        match mode {
+            crate::warm::Warmup::None => Ok(()),
+            crate::warm::Warmup::Eager => {
+                warm_parts(&self.shared.snapshot().segments, self.embedder.as_ref());
+                Ok(())
+            }
+            crate::warm::Warmup::Background => {
+                let segments = self.shared.snapshot().segments.clone();
+                let embedder = self.embedder.clone();
+                let handle = std::thread::Builder::new()
+                    .name("gyr-warm".into())
+                    .spawn(move || warm_parts(&segments, embedder.as_ref()))
+                    .map_err(Error::Io)?;
+                *self.warm_job.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);
+                Ok(())
+            }
+        }
+    }
+
+    /// Joins a background warmup, if one is running.
+    pub fn wait_for_warm(&self) {
+        if let Some(handle) = self.warm_job.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            let _ = handle.join();
+        }
     }
 
     /// The embedder this index uses for ingest and queries.
@@ -874,8 +922,16 @@ impl Index {
 
 impl Drop for Index {
     fn drop(&mut self) {
+        self.wait_for_warm();
         self.stop_merger();
     }
+}
+
+fn warm_parts(segments: &[Arc<Segment>], embedder: &dyn Embedder) {
+    for segment in segments {
+        let _ = segment.warm();
+    }
+    embedder.warm();
 }
 
 /// A logged chunk as a record, its terms recomputed by `prepare`.

@@ -97,6 +97,33 @@ pub enum FusionKind {
     RescoreMax,
 }
 
+/// When open reads mapped search files into the page cache.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum WarmFlag {
+    /// Do not read ahead. A query reads exact rows while pages are missing.
+    None,
+    /// Return as soon as the files are mapped. A thread reads them in; early queries use exact rows.
+    Background,
+    /// Read the mapped files before open returns.
+    Eager,
+}
+
+impl From<WarmFlag> for gyrfalcon::Warmup {
+    fn from(flag: WarmFlag) -> Self {
+        match flag {
+            WarmFlag::None => gyrfalcon::Warmup::None,
+            WarmFlag::Background => gyrfalcon::Warmup::Background,
+            WarmFlag::Eager => gyrfalcon::Warmup::Eager,
+        }
+    }
+}
+
+impl std::fmt::Display for WarmFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(gyrfalcon::Warmup::from(*self).name())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Tier {
     /// Static potion-retrieval-32M embeddings and rescore fusion: fast on any CPU.
@@ -131,6 +158,10 @@ pub struct ModelArgs {
     /// Directory the tier models live under, one subdirectory per model.
     #[arg(long, env = "GYR_MODELS", default_value = ".models")]
     pub models: PathBuf,
+    /// When to read mapped search files into the page cache. `eager` is the library default
+    /// until the open-time measurement chooses one.
+    #[arg(long, value_enum, env = "GYR_WARM", default_value_t = WarmFlag::Eager)]
+    pub warm: WarmFlag,
     #[arg(long, value_enum, env = "GYR_EMBEDDER")]
     pub embedder: Option<EmbedderKind>,
     /// Model directory for the embedder; defaults to the tier's model under --models.
@@ -244,7 +275,16 @@ impl ModelArgs {
     }
 
     /// Loads the embedder the process config names and checks its width.
+    /// An eager load also faults a static table and prefetches an ONNX file.
     pub fn load_embedder(&self, config: &IndexConfig) -> Result<Box<dyn Embedder>, Error> {
+        let embedder = self.build_embedder(config, true)?;
+        embedder.warm();
+        Ok(embedder)
+    }
+
+    /// `load_embedder` without faulting a static table. `ort_prefetch` reads an ONNX file
+    /// sequentially before the session maps it.
+    fn build_embedder(&self, config: &IndexConfig, ort_prefetch: bool) -> Result<Box<dyn Embedder>, Error> {
         let model_dir = self.model_dir();
         let embedder: Box<dyn Embedder> = match self.embedder() {
             EmbedderKind::Hash => Box::new(HashEmbedder::new(config.dimension)),
@@ -252,7 +292,10 @@ impl ModelArgs {
                 let model_dir = model_dir.as_ref().ok_or_else(|| {
                     Error::ModelUnavailable("--model-dir (or GYR_MODEL_DIR) is required for the ort embedder".into())
                 })?;
-                Box::new(SessionEmbedder::new(OrtModel::load(model_dir)?, config.model_id.clone()))
+                Box::new(SessionEmbedder::new(
+                    OrtModel::load_prefetch(model_dir, ort_prefetch)?,
+                    config.model_id.clone(),
+                ))
             }
             EmbedderKind::Static => {
                 let model_dir = model_dir.as_ref().ok_or_else(|| {
@@ -288,12 +331,16 @@ impl ModelArgs {
         let mut index = if create && !dir.join("manifest.json").exists() {
             Index::create(dir, &config)?
         } else {
-            Index::open(dir, &config)?
+            Index::open_with_warmup(dir, &config, gyrfalcon::Warmup::None)?
         };
-        let embedder = self.load_embedder(&config)?;
+        // ONNX weights are read while the session loads. A static table is mapped here and
+        // faulted by `warmup`, which also covers the segment files.
+        let eager = matches!(self.warm, WarmFlag::Eager);
+        let embedder = self.build_embedder(&config, eager)?;
         index.set_embedder(embedder);
         index.rrf_weights = [self.lexical_weight, self.dense_weight];
         index.fusion = self.fusion();
+        index.warmup(self.warm.into())?;
         if let Some(dir) = &self.reranker_dir {
             index.set_reranker(Box::new(OrtReranker::from_dir(dir)?));
         }

@@ -135,7 +135,10 @@ _find_pdfium()
 class Collection:
     """A Gyrfalcon collection on disk: a directory holding the index of one tier.
 
-    Opening creates the collection unless ``create=False``. One process at a time may hold it;
+    Opening creates the collection unless ``create=False``. ``warm`` is ``"none"``,
+    ``"background"``, or ``"eager"`` (the default: read mapped search files before open
+    returns). ``"background"`` returns immediately and reads those files on a thread; a query
+    before that finishes reads exact rows. One process at a time may hold the collection;
     close it (or use ``with``) to release it. Writes are durable when a call returns.
     """
 
@@ -146,11 +149,12 @@ class Collection:
         *,
         models: Optional[PathLike] = None,
         create: bool = True,
+        warm: str = "eager",
     ) -> None:
         if tier == "full":
             _find_onnxruntime()
         model_dir = ensure_model(tier, models)
-        self._native = _native.Collection(os.fspath(path), os.fspath(model_dir), tier, create)
+        self._native = _native.Collection(os.fspath(path), os.fspath(model_dir), tier, create, warm)
 
     @property
     def path(self) -> Path:

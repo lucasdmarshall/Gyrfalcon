@@ -228,7 +228,10 @@ fn handle(app: &App, mut stream: TcpStream) -> std::io::Result<()> {
 
 fn route(app: &App, request: &Request, body: &Value) -> Result<Value, (u16, Value)> {
     match (request.method.as_str(), request.path.as_str()) {
-        ("GET", "/health") => Ok(json!({ "status": "ok" })),
+        ("GET", "/health") => {
+            let index = app.index.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+            Ok(json!({ "status": "ok", "warm": index.warm_name() }))
+        }
         ("POST", "/v1/documents") => {
             gate(app, body)?;
             let documents = body

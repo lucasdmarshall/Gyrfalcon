@@ -65,3 +65,4 @@ pub use static_embed::{StaticEmbedder, STATIC_MAX_TOKENS};
 pub use tier::{ModelFile, Tier};
 pub use tombstone::DeleteReport;
 pub use vector::{FallbackStep, VectorSegment};
+pub use warm::Warmup;

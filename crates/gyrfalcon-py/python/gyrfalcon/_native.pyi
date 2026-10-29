@@ -25,6 +25,7 @@ class Collection:
         model_dir: Union[str, PathLike[str]],
         tier: str = "lite",
         create: bool = True,
+        warm: str = "eager",
     ) -> None: ...
     @property
     def path(self) -> str: ...
