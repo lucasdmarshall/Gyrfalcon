@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bench::{mrr_at, ndcg_at, recall_at, Qrels};
 use crate::error::{Error, Result};
-use crate::fuse::score_fusion;
+use crate::fuse::{max_fusion, score_fusion};
 use crate::index::Index;
 use crate::prepare::prepare;
 use crate::rerank::Reranker;
@@ -180,6 +180,18 @@ impl Index {
                 }
             }
         }
+        // The tier's own fusion, so a replay of that rule finds its top `k` scored. Lite is
+        // rescore-max; the weight sweep above is min-max rescore and does not cover it.
+        let configured = match self.fusion {
+            crate::fuse::Fusion::RescoreMax { dense_weight } => max_order(trace, dense_weight),
+            crate::fuse::Fusion::Rescore { dense_weight } => rescore_order(trace, dense_weight),
+            _ => Vec::new(),
+        };
+        for doc in configured.into_iter().take(k) {
+            if seen.insert(doc.clone()) {
+                pool.push(doc);
+            }
+        }
         let mut bodies = Vec::with_capacity(pool.len());
         for doc in &pool {
             let chunk = trace.chunks.get(doc).copied().unwrap_or(u64::MAX);
@@ -204,6 +216,11 @@ pub enum Policy {
         dense_weight: f32,
         rerank_k: usize,
     },
+    /// `Fusion::RescoreMax` with this dense weight, then optionally rerank the top `k`.
+    RescoreMax {
+        dense_weight: f32,
+        rerank_k: usize,
+    },
 }
 
 impl Policy {
@@ -217,6 +234,11 @@ impl Policy {
                 let dense_weight = parts.next()?.parse().ok()?;
                 let rerank_k = parts.next().map(|k| k.parse().ok()).unwrap_or(Some(0))?;
                 Some(Policy::Rescore { dense_weight, rerank_k })
+            }
+            "rescoremax" => {
+                let dense_weight = parts.next()?.parse().ok()?;
+                let rerank_k = parts.next().map(|k| k.parse().ok()).unwrap_or(Some(0))?;
+                Some(Policy::RescoreMax { dense_weight, rerank_k })
             }
             _ => None,
         }
@@ -241,29 +263,33 @@ pub fn replay(trace: &QueryTrace, policy: Policy, limit: usize) -> (Vec<String>,
             ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
             (ranked.into_iter().map(|(d, _)| d.to_string()).collect(), t.prepare + t.lexical + t.embed + t.dense)
         }
-        Policy::Rescore { dense_weight, rerank_k } => {
-            let mut ranked = rescore_order(trace, dense_weight);
-            let mut cost = t.prepare + t.lexical + t.embed + t.dense + t.exact;
-            if rerank_k > 0 {
-                let k = rerank_k.min(ranked.len());
-                let mut head: Vec<String> = ranked.drain(..k).collect();
-                // Stable: unscored documents and ties keep the fused order.
-                head.sort_by(|a, b| {
-                    let score = |d: &String| trace.rerank.get(d).copied().unwrap_or(f32::NEG_INFINITY);
-                    score(b).total_cmp(&score(a))
-                });
-                head.extend(ranked);
-                ranked = head;
-                cost += k as f64 * t.rerank_per_pair;
-            }
-            (ranked, cost)
-        }
+        Policy::Rescore { dense_weight, rerank_k } => rerank_head(trace, rescore_order(trace, dense_weight), rerank_k),
+        Policy::RescoreMax { dense_weight, rerank_k } => rerank_head(trace, max_order(trace, dense_weight), rerank_k),
     };
     let mut ranked = crate::bench::dedupe_doc_keys(&ranked);
     let cost = cost + t.overhead + ranked.len().min(limit) as f64 * t.fetch_per_hit;
     // BEIR and MTEB ignore a retrieved document whose id is the query id (ArguAna).
     ranked.retain(|d| *d != trace.query_id);
     ranked.truncate(limit);
+    (ranked, cost)
+}
+
+/// Reorders `fused` by stored cross-encoder scores and adds `k` pair-times to the step cost.
+fn rerank_head(trace: &QueryTrace, mut ranked: Vec<String>, rerank_k: usize) -> (Vec<String>, f64) {
+    let t = &trace.timings;
+    let mut cost = t.prepare + t.lexical + t.embed + t.dense + t.exact;
+    if rerank_k > 0 {
+        let k = rerank_k.min(ranked.len());
+        let mut head: Vec<String> = ranked.drain(..k).collect();
+        // Stable: unscored documents and ties keep the fused order.
+        head.sort_by(|a, b| {
+            let score = |d: &String| trace.rerank.get(d).copied().unwrap_or(f32::NEG_INFINITY);
+            score(b).total_cmp(&score(a))
+        });
+        head.extend(ranked);
+        ranked = head;
+        cost += k as f64 * t.rerank_per_pair;
+    }
     (ranked, cost)
 }
 
@@ -278,6 +304,21 @@ fn rescore_order(trace: &QueryTrace, dense_weight: f32) -> Vec<String> {
     let lexical: Vec<(u64, f32)> = trace.lexical.iter().map(|(d, s)| (chunk(d), *s)).collect();
     let exact: Vec<(u64, f32)> = ids.iter().filter_map(|d| trace.exact.get(*d).map(|s| (chunk(d), *s))).collect();
     score_fusion(&lexical, &exact, dense_weight)
+        .into_iter()
+        .filter_map(|(id, _)| doc_of.get(&id).map(|d| d.to_string()))
+        .collect()
+}
+
+/// The live `Fusion::RescoreMax` order: BM25 divided by the best BM25 score, plus raw cosine.
+fn max_order(trace: &QueryTrace, dense_weight: f32) -> Vec<String> {
+    let chunk = |d: &str| trace.chunks.get(d).copied().unwrap_or(u64::MAX);
+    let mut docs: Vec<&str> = trace.exact.keys().map(String::as_str).collect();
+    docs.sort_unstable();
+    docs.dedup();
+    let doc_of: HashMap<u64, &str> = docs.iter().map(|d| (chunk(d), *d)).collect();
+    let lexical: Vec<(u64, f32)> = trace.lexical.iter().map(|(d, s)| (chunk(d), *s)).collect();
+    let sims: Vec<(u64, f32)> = docs.iter().filter_map(|d| trace.exact.get(*d).map(|s| (chunk(d), *s))).collect();
+    max_fusion(&lexical, &sims, dense_weight)
         .into_iter()
         .filter_map(|(id, _)| doc_of.get(&id).map(|d| d.to_string()))
         .collect()
