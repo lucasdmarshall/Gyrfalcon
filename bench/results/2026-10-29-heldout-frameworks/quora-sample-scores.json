@@ -1,0 +1,21 @@
+{
+  "dataset": "quora",
+  "split": "test",
+  "sample": {
+    "max_queries": 200,
+    "seed": 20261029,
+    "population": 10000,
+    "query_ids_file": "quora-sample.json"
+  },
+  "note": "Scored from gyrfalcon-quora-runs with bench/compare/common.py on the predeclared query ids. These are not the official full-split numbers.",
+  "full_split": {
+    "queries": 10000,
+    "configured": {"ndcg_at_10": 0.8343980230480278, "recall_at_100": 0.9781017915071374},
+    "rrf": {"ndcg_at_10": 0.8177981151058588, "recall_at_100": 0.9860461134137138}
+  },
+  "sample_200": {
+    "queries": 200,
+    "configured": {"ndcg_at_10": 0.8505516686284992, "recall_at_100": 0.9790000000000001},
+    "rrf": {"ndcg_at_10": 0.8292477290206038, "recall_at_100": 0.9885833333333334}
+  }
+}

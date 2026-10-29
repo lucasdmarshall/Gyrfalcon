@@ -1,0 +1,14 @@
+{
+ "system": "langchain",
+ "dataset": "webis-touche2020",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 382545,
+ "queries": 49,
+ "index_seconds": 244.18056763800269,
+ "query_p50_ms": 29460.478609002166,
+ "query_p99_ms": 37398.909677998745,
+ "query_mean_ms": 28391.883097612405,
+ "ndcg_at_10": 0.28148382007593,
+ "recall_at_100": 0.4986104942848984
+}

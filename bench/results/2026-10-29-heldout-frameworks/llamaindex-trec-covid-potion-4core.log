@@ -1,0 +1,6 @@
+indexed 171332 docs in 57.6s, querying 50
+query 1/50 last_ms 2617.9
+query 25/50 last_ms 2282.2
+query 50/50 last_ms 2268.9
+Some nodes are missing content, skipping them...
+{"system": "llamaindex", "dataset": "trec-covid", "embedder": "potion", "threads": 4, "docs": 171332, "queries": 50, "index_seconds": 57.62100783799906, "query_p50_ms": 2279.290303002199, "query_p99_ms": 3498.5634250006115, "query_mean_ms": 2332.102457899964, "ndcg_at_10": 0.6355093230463159, "recall_at_100": 0.10228398537470211}

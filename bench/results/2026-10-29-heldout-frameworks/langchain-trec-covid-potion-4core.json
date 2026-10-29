@@ -1,0 +1,14 @@
+{
+ "system": "langchain",
+ "dataset": "trec-covid",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 171332,
+ "queries": 50,
+ "index_seconds": 36.00357883400284,
+ "query_p50_ms": 2682.6564369985135,
+ "query_p99_ms": 3156.63252000013,
+ "query_mean_ms": 2700.257896559924,
+ "ndcg_at_10": 0.5432973931392445,
+ "recall_at_100": 0.08035936119379686
+}

@@ -1,0 +1,14 @@
+{
+ "system": "llamaindex",
+ "dataset": "webis-touche2020",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 382545,
+ "queries": 49,
+ "index_seconds": 167.0275524919998,
+ "query_p50_ms": 5402.3472589979065,
+ "query_p99_ms": 6271.698362001189,
+ "query_mean_ms": 5449.5772382651185,
+ "ndcg_at_10": 0.2815881327806922,
+ "recall_at_100": 0.5537618108847028
+}
