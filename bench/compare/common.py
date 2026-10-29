@@ -9,6 +9,7 @@ import json
 import math
 import os
 import random
+import sys
 import time
 
 import numpy as np
@@ -133,10 +134,13 @@ def evaluate(run, qrels, queries):
 def timed_queries(queries, search):
     """Runs `search(text) -> [doc ids]` once per query, sequentially."""
     run, millis = {}, []
-    for qid, text in queries:
+    total = len(queries)
+    for i, (qid, text) in enumerate(queries, 1):
         started = time.perf_counter()
         run[qid] = search(text)
         millis.append((time.perf_counter() - started) * 1000)
+        if i == 1 or i % 25 == 0 or i == total:
+            print(f"query {i}/{total} last_ms {millis[-1]:.1f}", file=sys.stderr, flush=True)
     millis.sort()
     return run, {
         "query_p50_ms": millis[len(millis) // 2],

@@ -117,6 +117,7 @@ def main():
     started = time.perf_counter()
     search = {"llamaindex": llamaindex, "langchain": langchain, "haystack": haystack}[framework](docs, embedder)
     index_seconds = time.perf_counter() - started
+    print(f"indexed {len(docs)} docs in {index_seconds:.1f}s, querying {len(queries)}", file=sys.stderr, flush=True)
     run, latency = timed_queries(queries, search)
     write_run(out + ".tsv", run)
     report = {
