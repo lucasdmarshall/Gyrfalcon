@@ -40,10 +40,13 @@ impl Warmup {
 }
 
 impl Default for Warmup {
-    /// The library open reads the mapped files before returning. The CLI, Python, and HTTP
-    /// default is the same until the open-time measurement picks one.
+    /// `background` is the default. On the 2026-10-29 gp3 profile, `eager` held FiQA's open for
+    /// 1.1 s and Quora's for 5.6 s, and the time to the first hit was slower than doing nothing.
+    /// `background` returns at the unwarmed open (about 170 ms and 360 ms) and the prefetch
+    /// catches a kept-open process up to the eager query latency. The first query itself stays
+    /// at the unwarmed latency. See `bench/results/2026-10-29-warm-modes/README.md`.
     fn default() -> Self {
-        Warmup::Eager
+        Warmup::Background
     }
 }
 
@@ -189,5 +192,6 @@ mod tests {
             assert_eq!(Warmup::parse(mode.name()), Some(mode));
         }
         assert_eq!(Warmup::parse("later"), None);
+        assert_eq!(Warmup::default(), Warmup::Background);
     }
 }

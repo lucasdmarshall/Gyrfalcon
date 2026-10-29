@@ -158,9 +158,9 @@ pub struct ModelArgs {
     /// Directory the tier models live under, one subdirectory per model.
     #[arg(long, env = "GYR_MODELS", default_value = ".models")]
     pub models: PathBuf,
-    /// When to read mapped search files into the page cache. `eager` is the library default
-    /// until the open-time measurement chooses one.
-    #[arg(long, value_enum, env = "GYR_WARM", default_value_t = WarmFlag::Eager)]
+    /// When to read mapped search files into the page cache. `background` returns as soon as
+    /// `none` and prefetches on a thread. `eager` finishes that read before open returns.
+    #[arg(long, value_enum, env = "GYR_WARM", default_value_t = WarmFlag::Background)]
     pub warm: WarmFlag,
     #[arg(long, value_enum, env = "GYR_EMBEDDER")]
     pub embedder: Option<EmbedderKind>,

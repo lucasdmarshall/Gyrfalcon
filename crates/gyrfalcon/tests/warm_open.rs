@@ -1,5 +1,5 @@
-//! Opening a collection reads its mapped search files into the page cache, so the first query
-//! does not fault them one page at a time.
+//! `Index::open` prefetches mapped search files on a background thread. `Warmup::Eager` finishes
+//! that read before it returns, which is what the residency checks below pin down.
 
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
@@ -118,7 +118,7 @@ fn open_loads_search_files_into_the_page_cache() {
     assert!(pages > 1, "vectors.bin has {pages} pages; the fixture must span more than one");
     assert!(resident < pages, "eviction left vectors.bin fully resident ({resident}/{pages})");
 
-    Index::open(dir.path(), &config).unwrap();
+    Index::open_with_warmup(dir.path(), &config, Warmup::Eager).unwrap();
 
     for path in &paths {
         let (resident, pages) = resident_pages(path);

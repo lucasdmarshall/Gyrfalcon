@@ -444,7 +444,7 @@ impl Index {
     }
 
     pub fn open(path: &Path, expected: &IndexConfig) -> Result<Index> {
-        Index::open_with_warmup(path, expected, crate::warm::Warmup::Eager)
+        Index::open_with_warmup(path, expected, crate::warm::Warmup::default())
     }
 
     /// `open`, faulting mapped search files according to `warmup`. The embedder attached later

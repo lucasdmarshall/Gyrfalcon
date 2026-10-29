@@ -118,7 +118,7 @@ impl Collection {
     /// Opens the collection at `path`, creating it when `create` is true and it does not exist.
     /// `model_dir` holds the tier's model files. `warm` is `none`, `background`, or `eager`.
     #[new]
-    #[pyo3(signature = (path, model_dir, tier = "lite", create = true, warm = "eager"))]
+    #[pyo3(signature = (path, model_dir, tier = "lite", create = true, warm = "background"))]
     fn new(
         py: Python<'_>,
         path: PathBuf,

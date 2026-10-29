@@ -10,7 +10,7 @@ HTTP API, and the limits built into the engine.
 - [HTTP API](#http-api)
 - [Engine limits and defaults](#engine-limits-and-defaults)
 
-The Python package takes its few options as arguments (`tier`, `models`, `create`); see the
+The Python package takes its few options as arguments (`tier`, `models`, `create`, `warm`); see the
 [Python API](python-api.md). It reads `GYR_MODELS`, `XDG_CACHE_HOME`, `ORT_DYLIB_PATH`, and
 `GYR_PDFIUM` from the environment.
 
@@ -65,7 +65,7 @@ these. A collection must be opened with the same model settings it was created w
 | `--dense-alpha` | | the tier's weight | Dense weight for `score`, `rescore`, `rescore-max`, in `[0, 1]` |
 | `--lexical-weight` | | `1.0` | BM25 weight for `--fusion rrf` |
 | `--dense-weight` | | `1.0` | Dense weight for `--fusion rrf` |
-| `--warm` | `GYR_WARM` | `eager` | When open reads mapped search files: `none`, `background`, or `eager`. `eager` finishes before open returns. `background` returns immediately and reads on a thread; a query before that finishes reads exact rows. `none` does not read ahead. The default stays `eager` until the open-time measurement on FiQA and Quora picks one |
+| `--warm` | `GYR_WARM` | `background` | When open reads mapped search files: `none`, `background`, or `eager`. `background` returns immediately and reads on a thread; a query before that finishes reads exact rows. `eager` finishes before open returns. `none` does not read ahead. `background` is the default because, on the gp3 profile in `bench/results/2026-10-29-warm-modes`, it opened as fast as `none` (FiQA 169 ms, Quora 364 ms) while `eager` held open for 1.1 s and 5.6 s. The first query stays at the unwarmed latency. A process that stays open reaches the eager query latency while the prefetch runs |
 | `--reranker-dir` | `GYR_RERANKER_DIR` | | Cross-encoder directory (`model.onnx`, `tokenizer.json`) |
 | `--chat-endpoint` | `GYR_CHAT_ENDPOINT` | | Full chat completions URL, for example `http://localhost:8080/v1/chat/completions` |
 | `--chat-model` | `GYR_CHAT_MODEL` | `default` | Model name sent to the chat endpoint |
@@ -112,7 +112,7 @@ it to a network.
 
 | Method | Path | Does |
 |---|---|---|
-| `GET` | `/health` | `{"status": "ok", "warm": "eager"}` (`warm` is the mode this process opened with) |
+| `GET` | `/health` | `{"status": "ok", "warm": "background"}` (`warm` is the mode this process opened with) |
 | `POST` | `/v1/documents` | Index documents |
 | `PUT` | `/v1/documents/{doc_id}` | Replace a document atomically, or insert it (`doc_id` percent-encoded) |
 | `DELETE` | `/v1/documents/{doc_id}` | Delete a document (`doc_id` percent-encoded) |
