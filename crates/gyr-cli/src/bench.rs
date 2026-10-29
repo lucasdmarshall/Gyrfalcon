@@ -114,7 +114,7 @@ pub enum BenchCommand {
         traces: Vec<PathBuf>,
         #[arg(long, default_value = "validation")]
         split: String,
-        /// lexical, dense, rrf, rescore:W, or rescore:W:K (rerank the top K).
+        /// lexical, dense, rrf, rescore:W, rescore:W:K, rescoremax:W, or rescoremax:W:K.
         #[arg(long, value_delimiter = ',', required = true)]
         policies: Vec<String>,
         #[arg(long)]
@@ -741,14 +741,25 @@ fn calibrate_overhead(
 fn verify_replay(index: &mut Index, traces: &[(String, gyrfalcon::planner::QueryTrace)]) -> Result<Value, Error> {
     use gyrfalcon::planner::{score, summarize, Policy};
     let configured = (index.rrf_weights, index.fusion);
+    let mut checks = vec![
+        ("lexical".to_string(), [1.0, 0.0], Fusion::Rrf),
+        ("dense".to_string(), [0.0, 1.0], Fusion::Rrf),
+        ("rrf".to_string(), [1.0, 1.0], Fusion::Rrf),
+        ("rescore:0.2".to_string(), [1.0, 1.0], Fusion::Rescore { dense_weight: 0.2 }),
+        ("rescore:0.5".to_string(), [1.0, 1.0], Fusion::Rescore { dense_weight: 0.5 }),
+    ];
+    // The tier's own fusion, so a lite rescore-max trace is checked the same way as rescore.
+    match configured.1 {
+        Fusion::RescoreMax { dense_weight } => {
+            checks.push((format!("rescoremax:{dense_weight:.2}"), [1.0, 1.0], Fusion::RescoreMax { dense_weight }))
+        }
+        Fusion::Rescore { dense_weight } => {
+            checks.push((format!("rescore:{dense_weight:.2}"), [1.0, 1.0], Fusion::Rescore { dense_weight }))
+        }
+        _ => {}
+    }
     let mut rows = Vec::new();
-    for (spec, weights, fusion) in [
-        ("lexical", [1.0, 0.0], Fusion::Rrf),
-        ("dense", [0.0, 1.0], Fusion::Rrf),
-        ("rrf", [1.0, 1.0], Fusion::Rrf),
-        ("rescore:0.2", [1.0, 1.0], Fusion::Rescore { dense_weight: 0.2 }),
-        ("rescore:0.5", [1.0, 1.0], Fusion::Rescore { dense_weight: 0.5 }),
-    ] {
+    for (spec, weights, fusion) in checks {
         index.rrf_weights = weights;
         index.fusion = fusion;
         let (mut ndcg, mut millis) = (0.0, Vec::with_capacity(traces.len()));
@@ -765,7 +776,7 @@ fn verify_replay(index: &mut Index, traces: &[(String, gyrfalcon::planner::Query
         }
         let live_ndcg = ndcg / traces.len().max(1) as f64;
         let live = LatencyColumn::from_samples(1, millis, 0.0, &[]);
-        let policy = Policy::parse(spec).unwrap();
+        let policy = Policy::parse(&spec).unwrap();
         let replayed = summarize(&traces.iter().map(|(_, t)| score(t, policy)).collect::<Vec<_>>());
         let ndcg_ok = (replayed.ndcg_at_10 - live_ndcg).abs() <= 0.01 * live_ndcg.max(1e-9);
         // Live lexical-only and dense-only still run both legs, so only fused policies compare.
