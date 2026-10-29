@@ -178,7 +178,11 @@ the Quora sample peaked at 13 to 15 GB RSS on a 15 GB machine and used a 16 GB s
 LangChain's Touché query p50 was 29.5 s under that swap. Those clocks are not comparable to a
 run that stayed in RAM, and they are not comparable to Gyrfalcon's full-split Quora p50.
 nDCG does not depend on the swap. TREC-COVID has one empty document; LlamaIndex skipped it.
-The cells are library defaults. A tuned setup per framework was not added.
+The cells above are library defaults. A stemmed BM25 tokenizer beside those defaults, on the
+four tuning sets only, is in `bench/results/2026-10-29-tuned-baselines`. LangChain's whitespace
+split was most of its gap (FiQA 0.188 to 0.237). Haystack already lowercases; stemming drops
+ArguAna from 0.441 to 0.426. Neither stemmed row passes Gyrfalcon configured. LlamaIndex's
+default already stems, so it has no second row. Held-out sets were not rerun with the stemmer.
 
 ## Cross-encoder depth
 

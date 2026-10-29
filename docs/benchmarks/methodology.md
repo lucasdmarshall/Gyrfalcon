@@ -140,8 +140,10 @@ These points affect how the comparison should be read. They are listed here rath
    measured.
 9. **What is not measured.** End-to-end answer quality with an LLM, non-English text, a corpus of
    1M+ chunks (Quora lite is 522,931), GPUs, the full tier's rerank sweep, Open RAG Bench under
-   this reranker, the three frameworks on all 10,000 Quora queries, a tuned setup beside each
-   framework's defaults, and per-leg quality of the other frameworks.
+   this reranker, the three frameworks on all 10,000 Quora queries, the stemmed BM25 variants on
+   the held-out sets, and per-leg quality of the other frameworks. The stemmed variants on the
+   four tuning sets are in `bench/results/2026-10-29-tuned-baselines`: they were not fit on a
+   score, and they do not replace the library-default cells.
 10. **The eight-set framework table mixes two Python versions and one reused run.** Tuning-set
     framework cells are the 2026-10-25 measurement (Python 3.13) and were not repeated. Held-out
     framework cells are Python 3.12.3 on 2026-10-29. Quora's framework cells are a 200-query
