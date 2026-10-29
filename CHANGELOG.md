@@ -4,7 +4,7 @@
 
 Prepared on 2026-10-29. Not published: no `v0.1.0` tag has been pushed, and nothing has been uploaded to PyPI or crates.io.
 
-The Python distribution name is `gyrfalcon-rag` because `gyrfalcon` is already registered on PyPI. The import name is `gyrfalcon`. The Rust crates `gyrfalcon`, `gyrfalcon-ingest`, and `gyr-cli` are version 0.1.0.
+The Python distribution name is `gyrfalcon-rag` because `gyrfalcon` is already registered on PyPI. The import name is `gyrfalcon`. The Rust crates `gyrfalcon`, `gyrfalcon-ingest`, and `gyr-cli` are version 0.1.0. The answer and judge prompts live in the `gyrfalcon` crate so a packaged build can compile; the bytes are the same as `bench/answer_prompt.txt` and `bench/judge_prompt.txt`.
 
 ### Added
 
