@@ -40,7 +40,7 @@ No server, no vector database, no GPU, and a default tier that needs no model ru
 ## Quickstart
 
 ```sh
-pip install gyrfalcon            # add [pdf] for PDF files, [full] for the transformer tier
+pip install gyrfalcon-rag       # import gyrfalcon; add [pdf] for PDFs, [full] for the transformer tier
 ```
 
 ```python
@@ -53,11 +53,6 @@ with Collection("./my-index") as col:                 # created on first use
     for hit in col.search("largest falcon", k=5, filter={"topic": "birds"}):
         print(f"{hit.score:.3f}  {hit.doc_id}  {hit.text[:80]}")
 ```
-
-> [!NOTE]
-> The first PyPI release is pending. Until then, install from source:
-> `cd crates/gyrfalcon-py && pip install maturin && maturin develop --release`.
-> See [Installation](docs/getting-started/installation.md).
 
 The model (130 MB) downloads on first use. Every write is durable when the call returns, and the
 next search sees it. `update` replaces a document atomically; `delete` removes it.
@@ -232,7 +227,7 @@ The full design, with the measurement behind every decision, is in
 | | `lite` (default) | `full` |
 |:---|:---|:---|
 | Embedder | potion-retrieval-32M, a static table | bge-small-en-v1.5, int8 transformer |
-| Needs | nothing | ONNX Runtime (`pip install "gyrfalcon[full]"`) |
+| Needs | nothing | ONNX Runtime (`pip install "gyrfalcon-rag[full]"`) |
 | Index speed | 15,000 to 30,000 docs/s on 4 cores | about 25 docs/s on 4 cores |
 | Best for | large or changing corpora, small machines | corpora where quality outweighs ingest time |
 
@@ -309,7 +304,7 @@ Bug reports, fixes, and measured improvements are welcome. Read
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [Apache License 2.0](LICENSE). Changes for each version are in [CHANGELOG.md](CHANGELOG.md).
 
 [^tuned]: Weights were chosen on validation splits of SciFact, NFCorpus, ArguAna, FiQA, and Open
     RAG Bench, which use different queries from the reported test splits over the same documents.

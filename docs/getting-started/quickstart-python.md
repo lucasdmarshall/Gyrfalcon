@@ -8,11 +8,11 @@ the default `lite` tier, which needs no model runtime and runs on any CPU.
 ## 1. Install
 
 ```sh
-pip install gyrfalcon
+pip install gyrfalcon-rag
 ```
 
-Add `[pdf]` if you will index PDF files. See [Installation](installation.md) for the other
-options.
+The distribution name is `gyrfalcon-rag`. The import in the samples is `gyrfalcon`. Add `[pdf]`
+if you will index PDF files. See [Installation](installation.md) for the other options.
 
 ## 2. Create a collection and add text
 

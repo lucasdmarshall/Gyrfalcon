@@ -1,8 +1,9 @@
 name: wheels
 
-# Builds the gyrfalcon Python package for Linux, macOS, and Windows (abi3: one wheel per
+# Builds the gyrfalcon-rag Python package for Linux, macOS, and Windows (abi3: one wheel per
 # platform serves Python 3.9 and later) on every version tag, and publishes it to PyPI through
-# trusted publishing (configure the project's publisher on pypi.org first).
+# trusted publishing (configure the gyrfalcon-rag publisher on pypi.org first).
+# macos-13 was removed in December 2025; macos-15-intel is the x86_64 runner.
 on:
   push:
     tags: ["v*"]
@@ -17,7 +18,7 @@ jobs:
           - { os: ubuntu-latest, target: x86_64, manylinux: auto }
           - { os: ubuntu-latest, target: aarch64, manylinux: auto }
           - { os: macos-14, target: aarch64 }
-          - { os: macos-13, target: x86_64 }
+          - { os: macos-15-intel, target: x86_64 }
           - { os: windows-latest, target: x64 }
     runs-on: ${{ matrix.os }}
     steps:

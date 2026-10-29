@@ -3,7 +3,8 @@ name = "gyrfalcon-py"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Python bindings for Gyrfalcon: the gyrfalcon package's native module."
+description = "Python bindings for Gyrfalcon. The distribution name is gyrfalcon-rag; the import name is gyrfalcon."
+repository = "https://github.com/lucasdmarshall/gyrfalcon"
 publish = false
 
 [lib]
@@ -11,8 +12,8 @@ name = "_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-gyrfalcon = { path = "../gyrfalcon" }
-gyrfalcon-ingest = { path = "../gyrfalcon-ingest" }
+gyrfalcon = { version = "0.1.0", path = "../gyrfalcon" }
+gyrfalcon-ingest = { version = "0.1.0", path = "../gyrfalcon-ingest" }
 pyo3 = { version = "0.30", features = ["abi3-py39"] }
 
 [features]

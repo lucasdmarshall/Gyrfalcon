@@ -1,7 +1,8 @@
-# gyrfalcon
+# gyrfalcon-rag
 
 Hybrid retrieval for RAG (BM25 and dense vectors, fused) in one Rust engine, built to be fast
-on any CPU. One `pip install`, no server, no vector database.
+on any CPU. One `pip install gyrfalcon-rag`, then `import gyrfalcon`. No server, no vector
+database. The PyPI name `gyrfalcon` is already taken, so the distribution name is `gyrfalcon-rag`.
 
 ```python
 from gyrfalcon import Collection
@@ -17,8 +18,8 @@ with Collection("./my-index") as col:              # creates the collection on f
 - `update(doc_id, text)` replaces a document atomically; `delete(doc_id)` removes it.
 - Writes are durable when the call returns; searches see them at once.
 - Two tiers. `lite` (default) embeds with static potion-retrieval-32M and needs no runtime.
-  `full` embeds with int8 bge-small-en-v1.5 and needs ONNX Runtime: `pip install gyrfalcon[full]`.
-- PDFs need PDFium: `pip install gyrfalcon[pdf]`.
+  `full` embeds with int8 bge-small-en-v1.5 and needs ONNX Runtime: `pip install "gyrfalcon-rag[full]"`.
+- PDFs need PDFium: `pip install "gyrfalcon-rag[pdf]"`.
 - Models download on first use into `$GYR_MODELS` (default `~/.cache/gyrfalcon/models`).
 
 Building from the repository: `pip install maturin && maturin develop --release` in
