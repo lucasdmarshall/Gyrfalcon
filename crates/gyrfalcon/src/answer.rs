@@ -10,10 +10,10 @@ use crate::http::{self, Url};
 use crate::index::{Document, Index};
 use crate::retrieve::{Hit, RetrieveOptions};
 
-/// The answer prompt, byte for byte from the spec.
-pub const ANSWER_PROMPT: &str = include_str!("../../../bench/answer_prompt.txt");
+/// The answer prompt, byte for byte from the spec. Kept inside the crate so `cargo package` can compile it.
+pub const ANSWER_PROMPT: &str = include_str!("../prompts/answer_prompt.txt");
 /// The judge prompt, byte for byte from the spec.
-pub const JUDGE_PROMPT: &str = include_str!("../../../bench/judge_prompt.txt");
+pub const JUDGE_PROMPT: &str = include_str!("../prompts/judge_prompt.txt");
 pub const CONTEXT_K: usize = 5;
 
 /// Where `answer` and contextual prefixes send chat completions.
@@ -237,5 +237,21 @@ impl Index {
             doc.text, body
         );
         Ok(complete(chat, &prompt)?.trim().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packaged_prompts_match_the_bench_copies() {
+        let bench = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench");
+        let answer = bench.join("answer_prompt.txt");
+        if !answer.exists() {
+            return;
+        }
+        assert_eq!(ANSWER_PROMPT, std::fs::read_to_string(answer).unwrap());
+        assert_eq!(JUDGE_PROMPT, std::fs::read_to_string(bench.join("judge_prompt.txt")).unwrap());
     }
 }

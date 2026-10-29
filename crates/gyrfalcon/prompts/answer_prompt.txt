@@ -1,0 +1,6 @@
+Answer the question using only the context. If the context does not contain the answer, say you do not know.
+
+Context:
+{{chunks}}
+
+Question: {{question}}
