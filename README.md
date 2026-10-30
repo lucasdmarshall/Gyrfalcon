@@ -171,11 +171,17 @@ data with the same embedding model, on the same 4-vCPU cloud VM.
 18.6 s, and queries take **2.2 ms** against 110 to 177 ms.
 
 **Held-out datasets.** Four BEIR sets that were never used to choose any setting. Lite tier,
-nDCG@10:
+Gyrfalcon configured, nDCG@10:
 
 | TREC-COVID | SciDocs | Quora | Touché-2020 |
 |:---:|:---:|:---:|:---:|
 | 0.680 | 0.165 | 0.834 | 0.318 |
+
+On the same sets, with reciprocal rank fusion, Haystack scores 0.334 on Touché-2020, ahead of
+both Gyrfalcon rules (0.318 configured, 0.309 RRF). Gyrfalcon RRF is 0.631 on TREC-COVID, below
+LlamaIndex at 0.636; configured still leads that set at 0.680. Quora's framework cells are a
+200-query sample, not the full 10,000. The
+[table](docs/benchmarks/results.md#same-rule-comparison-on-all-eight-sets) has every cell.
 
 **Variance.** Five back-to-back runs over eight datasets: nDCG@10 identical to every digit, p50
 within 1.5x across runs, p99 under 12 ms at the median on every set

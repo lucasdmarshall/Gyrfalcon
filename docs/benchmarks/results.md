@@ -128,7 +128,8 @@ rule; see [Methodology](methodology.md#disclosures).
 ## Held-out datasets
 
 Four BEIR sets never used for any choice, lite tier, test splits, nDCG@10
-(`2026-10-26-quality-sweep`). Other frameworks were not run on these sets.
+(`2026-10-26-quality-sweep`). The same-rule comparison against the other frameworks, including
+these four sets, is the next section.
 
 | Dataset | Documents | BM25 only | Dense only | Gyrfalcon fused | Previous default (rescore 0.4) |
 |---|---|---|---|---|---|
@@ -141,6 +142,92 @@ Four BEIR sets never used for any choice, lite tier, test splits, nDCG@10
 Against the previous default, the paired bootstrap found the TREC-COVID and Quora gains
 significant and the Touché-2020 drop not significant. Touché-2020 is the one set of eight where
 fusion scored below BM25 alone.
+
+## Same-rule comparison on all eight sets
+
+nDCG@10, lite tier, potion-retrieval-32M, depth 100, 4 vCPU
+(`bench/results/2026-10-29-heldout-frameworks`). Gyrfalcon configured is rescore-max, dense
+weight 0.45. Gyrfalcon RRF and the three frameworks use reciprocal rank fusion. No weight was
+chosen on this run. The tuning-set framework cells are the 2026-10-25 run and were not repeated.
+The Gyrfalcon cells are the full test splits, except the Quora sample row.
+
+| Dataset | Queries | Gyrfalcon configured | Gyrfalcon RRF | LlamaIndex | LangChain | Haystack |
+|---|---:|---:|---:|---:|---:|---:|
+| SciFact | 300 | 0.7088 | 0.6978 | 0.6945 | 0.6040 | 0.6739 |
+| NFCorpus | 323 | 0.3435 | 0.3395 | 0.3081 | 0.2543 | 0.3265 |
+| ArguAna | 1,406 | 0.4912 | 0.4893 | 0.4725 | 0.3867 | 0.4414 |
+| FiQA | 648 | 0.2659 | 0.2432 | 0.2420 | 0.1883 | 0.2388 |
+| TREC-COVID | 50 | 0.6797 | 0.6312 | 0.6355 | 0.5433 | 0.6016 |
+| SciDocs | 1,000 | 0.1646 | 0.1585 | 0.1571 | 0.1270 | 0.1563 |
+| Quora | 10,000 | 0.8344 | 0.8178 | | | |
+| Quora sample | 200 of 10,000 | 0.8506 | 0.8292 | 0.7900 | 0.7244 | 0.7961 |
+| Touché-2020 | 49 | 0.3183 | 0.3089 | 0.2816 | 0.2815 | 0.3337 |
+
+The frameworks were not run on all 10,000 Quora queries. The sample was drawn before any of
+these scores, seed `20261029`, and stored in `quora-sample.json` (first id `100298`, last
+`98114`). Its configured nDCG@10 is 0.8506, above the full-split 0.8344. The sample does not
+replace the full-split number.
+
+RRF is below the configured rule on every set. It is also below LlamaIndex on TREC-COVID
+(0.6312 vs 0.6355); configured still leads that set. Haystack leads both Gyrfalcon rules on
+Touché-2020 (0.3337 vs 0.3183 and 0.3089), and its recall@100 there is 0.5766 against 0.5534
+and 0.5597.
+
+This machine was Python 3.12.3. The reused 2026-10-25 cells were Python 3.13. Touché-2020 and
+the Quora sample peaked at 13 to 15 GB RSS on a 15 GB machine and used a 16 GB swap file.
+LangChain's Touché query p50 was 29.5 s under that swap. Those clocks are not comparable to a
+run that stayed in RAM, and they are not comparable to Gyrfalcon's full-split Quora p50.
+nDCG does not depend on the swap. TREC-COVID has one empty document; LlamaIndex skipped it.
+The cells above are library defaults. A stemmed BM25 tokenizer beside those defaults, on the
+four tuning sets only, is in `bench/results/2026-10-29-tuned-baselines`. LangChain's whitespace
+split was most of its gap (FiQA 0.188 to 0.237). Haystack already lowercases; stemming drops
+ArguAna from 0.441 to 0.426. Neither stemmed row passes Gyrfalcon configured. LlamaIndex's
+default already stems, so it has no second row. Held-out sets were not rerun with the stemmer.
+
+## Cross-encoder depth
+
+MiniLM (`ms-marco-MiniLM-L-6-v2`) on CPU, 4 vCPU, lite tier, rescore-max dense weight 0.45.
+K in {0, 8, 16, 20, 32, 50}. Official BEIR test, both hash halves. Quora is the same 200-query
+sample, not the full split. Latency is replayed step time: `K` times the per-pair time measured
+on the trace's union batch (about 60 to 80 pairs), not a fresh batch of K pairs. Recall@100
+does not change with K. Full tier was not run. Open RAG Bench was not rerun.
+`bench/results/2026-10-29-rerank-sweep`.
+
+nDCG@10:
+
+| Set | n | K=0 | K=8 | K=16 | K=20 | K=32 | K=50 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SciFact | 300 | 0.7088 | 0.6977 | 0.6869 | 0.6816 | 0.6833 | 0.6784 |
+| NFCorpus | 323 | 0.3435 | 0.3546 | 0.3533 | 0.3536 | 0.3520 | 0.3510 |
+| ArguAna | 1,406 | 0.4912 | 0.5023 | 0.5002 | 0.4979 | 0.4905 | 0.4810 |
+| FiQA | 648 | 0.2659 | 0.2979 | 0.3177 | 0.3189 | 0.3309 | 0.3385 |
+| SciDocs | 1,000 | 0.1646 | 0.1699 | 0.1695 | 0.1663 | 0.1665 | 0.1660 |
+| TREC-COVID | 50 | 0.6797 | 0.6885 | 0.7187 | 0.7232 | 0.7210 | 0.7520 |
+| Quora sample | 200 | 0.8506 | 0.8513 | 0.8493 | 0.8460 | 0.8456 | 0.8444 |
+| Touché-2020 | 49 | 0.3183 | 0.3227 | 0.3031 | 0.3096 | 0.2910 | 0.2852 |
+
+Deeper K is not uniformly better. FiQA keeps rising (+0.032 at K=8, +0.073 at K=50) and
+TREC-COVID is largest at K=50 (+0.072, 50 queries). NFCorpus, ArguAna, and SciDocs peak at K=8.
+SciFact is worse at every K (−0.011 at K=8, −0.030 at K=50). Touché-2020 gains 0.004 at K=8 and
+is 0.033 under no rerank at K=50. ArguAna at K=50 is 0.010 under no rerank. The Quora sample is
+flat at K=8 and 0.006 under no rerank at K=50.
+
+On this host a long query is 11–13 ms/pair, so K=8 is about 90 ms p50 and K=50 is about 530–650 ms.
+Quora questions are 1.6 ms/pair, so K=8 is 18 ms p50. The older "~180 ms and +0.08 nDCG on FiQA"
+note was about 22 ms/pair and a validation comparison, not this test-set K=8 point. Replay p50
+with no rerank matched live within 10% only on SciFact and NFCorpus; on the other six it ran
+high. nDCG matched live on the half the built-in checker scores.
+
+An offline selective replay, not a planner, reranks when the configured fusion's rank-1 score
+minus rank-2 is below 0.0379. That threshold was fit only on the tuning validation splits
+(2,323 queries), inside a predeclared 0.005 nDCG band of always-reranking, preferring the
+smallest rerank time. It reranks 549 of those queries and, at K=8, keeps 24% of the rerank
+milliseconds. p50 falls because most queries are skipped; p99 stays on the rerank path. On the
+test data the same frozen threshold gives up ArguAna's K=8 gain (11 of 716 hash-half queries
+reranked) and about a quarter of FiQA's K=8 gain. SciFact selective (0.7173) beats both
+always-rerank (0.6977) and no rerank (0.7088). At K=50 the same threshold gives up 0.026 of
+FiQA's gain and 0.034 of TREC-COVID's versus always-rerank, and Touché stays well under no
+rerank. Held-out queries did not move the threshold.
 
 ## Run-to-run variance
 
@@ -202,10 +289,10 @@ Quora, lite tier, 370 MB collection:
 | All 1,000 queries from a cold start, p50 / p99 | 6.2 / 11.8 ms | 12.7 / 193 ms | 11.9 / 522 ms |
 | Every query from an empty cache, p50 | | 1,797 ms | 7,131 ms |
 
-- **A running service is barely affected.** The first queries after a start pay for the disk; within
-  about ten queries the cache holds what queries touch, and the median over the run is within
-  a few milliseconds of the in-memory figure, even on a hard disk. The condition is RAM for the
-  collection plus the model.
+- **A running service is barely affected while the collection and the model fit.** The first
+  queries after a start pay for the disk; within about ten queries the cache holds what queries
+  touch, and the median over the run is within a few milliseconds of the in-memory figure, even
+  on a hard disk. That stops being true when the cgroup cannot keep the pages, below.
 - **A collection larger than RAM, or a process per query, pays on every query.** FiQA then takes
   0.7 s per query on cloud storage and 3 s on a hard disk.
 - **The cold path reads more than it needs.** A cold FiQA query reads about 36 MB: each random row
@@ -216,6 +303,32 @@ Quora, lite tier, 370 MB collection:
   the first open after a day took 4.4 s. The emulated profiles are repeatable; this disk is not.
 - **The FUSE layer** costs about 0.3 to 0.4 ms per read on its own (measured with zero added delay),
   which is why faster SSDs are not emulated.
+
+### Index larger than the cgroup
+
+Quora lite (522,931 chunks, 368 MB) plus the 131 MB model, 20 judged queries, `memory.max` 128 MB
+or 256 MB, `memory.swap.max=0`. `eager` is warm-open. No run was OOM-killed.
+`bench/results/2026-10-29-ram-cap`.
+
+| | open | query p50 | query p99 | hit memory.max |
+|---|---:|---:|---:|---:|
+| virtio, 256 MB, none | 44 ms | 12.8 ms | 42.5 ms | 0 |
+| virtio, 256 MB, eager | 504 ms | 11.1 ms | 39.4 ms | 2,296 |
+| virtio, 128 MB, none | 42 ms | 13.1 ms | 40.2 ms | 392 |
+| virtio, 128 MB, eager | 488 ms | 13.1 ms | 45.1 ms | 3,333 |
+| gp3, 256 MB, none | 382 ms | 78.3 ms | 446 ms | 0 |
+| gp3, 256 MB, eager | 6.1 s | 73.6 ms | 388 ms | 2,299 |
+| gp3, 128 MB, none | 377 ms | 80.7 ms | 438 ms | 394 |
+| gp3, 128 MB, eager | 6.4 s | 80.0 ms | 472 ms | 3,310 |
+
+The 128 MB cap cannot hold the model and the index. Every 128 MB run sat on the cap. 256 MB
+holds the model and these 20 queries' rows when warmup is off. Eager reads the collection at
+open and the cgroup reclaims it during that read, so the queries still fault. On gp3 the 6 s
+open does not make p50 faster than no warmup (74 ms vs 78 ms at 256 MB, 80 ms vs 81 ms at 128 MB).
+Query p50 does not cliff between the two caps on this 20-query slice. The virtio latency hides
+the refaults: this disk's host cache serves them, and each query still reads 3–5 MB p50 there
+(about 50 MB on the first). `read_bytes` on the FUSE mount does not include the daemon's backing
+reads. No corpus of 1M+ chunks was built.
 
 The head-to-head frameworks keep their indexes in memory and rebuild them on every start in the
 benchmark setup (17.7 to 32.8 s for FiQA). Their time to load a persisted index from disk was not

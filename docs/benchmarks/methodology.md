@@ -138,8 +138,29 @@ These points affect how the comparison should be read. They are listed here rath
 8. **Head-to-head latency is from memory.** Every system answered from RAM. Gyrfalcon from disk is
    measured on its own; the other frameworks' time to load a persisted index from disk is not
    measured.
-9. **What is not measured.** End-to-end answer quality with an LLM, non-English text, collections
-   above about half a million documents, GPUs, and per-leg quality of the other frameworks.
+9. **What is not measured.** End-to-end answer quality with an LLM, non-English text, a corpus of
+   1M+ chunks (Quora lite is 522,931), GPUs, the full tier's rerank sweep, Open RAG Bench under
+   this reranker, the three frameworks on all 10,000 Quora queries, the stemmed BM25 variants on
+   the held-out sets, and per-leg quality of the other frameworks. The stemmed variants on the
+   four tuning sets are in `bench/results/2026-10-29-tuned-baselines`: they were not fit on a
+   score, and they do not replace the library-default cells.
+10. **The eight-set framework table mixes two Python versions and one reused run.** Tuning-set
+    framework cells are the 2026-10-25 measurement (Python 3.13) and were not repeated. Held-out
+    framework cells are Python 3.12.3 on 2026-10-29. Quora's framework cells are a 200-query
+    sample drawn with seed `20261029` before scoring and stored in `quora-sample.json`; that
+    sample's Gyrfalcon nDCG is higher than the full split and is not the official Quora number.
+    Touché-2020 and the Quora sample used a 16 GB swap file. Their nDCG stands; their latency
+    does not. TREC-COVID has one empty document, which LlamaIndex skipped.
+11. **Rerank latency in the depth sweep is replayed.** The per-pair time was measured on a union
+    batch of about 60 to 80 pairs, and a depth of K is costed as K times that time. Replay p50
+    with no rerank was within 10% of live only on SciFact and NFCorpus. The selective threshold
+    was fit on tuning validation only, with a predeclared 0.005 nDCG band, and was not refit on
+    test or held-out queries. No planner was built from it. The full tier was not run.
+12. **A cgroup cap is not the host cache.** The 128 MB and 256 MB Quora runs set `memory.swap.max`
+    to 0. The virtio numbers are this VM's host-cached disk: guest pages were dropped, the host's
+    copy was not, so latency stays low while bytes read do not. The gp3 numbers are the FUSE
+    profile (`--latency-ms 0.65 --mb-per-s 125`), which does not model IOPS. Eager warmup under
+    the cap is reclaimed during open and does not make the following queries faster.
 
 ---
 
