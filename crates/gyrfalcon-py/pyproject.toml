@@ -3,7 +3,9 @@ requires = ["maturin>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
-name = "gyrfalcon"
+# The PyPI name "gyrfalcon" is already taken. This distribution is gyrfalcon-rag;
+# the import name stays gyrfalcon (module-name below).
+name = "gyrfalcon-rag"
 version = "0.1.0"
 description = "Fast hybrid retrieval for RAG: BM25 and dense search in one Rust engine, quick even on small CPUs."
 readme = "README.md"

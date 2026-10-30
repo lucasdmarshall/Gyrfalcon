@@ -10,7 +10,7 @@
 
 Models download on first use into ``$GYR_MODELS`` (default ``~/.cache/gyrfalcon/models``).
 The full tier needs ONNX Runtime and PDFs need PDFium; both are found automatically when the
-``onnxruntime`` and ``pypdfium2`` packages are installed (``pip install gyrfalcon[full,pdf]``),
+``onnxruntime`` and ``pypdfium2`` packages are installed (``pip install "gyrfalcon-rag[full,pdf]"``),
 or through ``ORT_DYLIB_PATH`` and ``GYR_PDFIUM``.
 """
 

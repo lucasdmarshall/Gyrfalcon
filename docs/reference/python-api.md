@@ -42,7 +42,7 @@ holds no collection. The tier's model is downloaded first if it is missing.
 
 Raises `FileNotFoundError` when `create=False` and there is no collection at `path`, and
 `RuntimeError` when the collection was built with another tier or format, or another process
-holds it. `tier="full"` also needs ONNX Runtime (`pip install "gyrfalcon[full]"` or
+holds it. `tier="full"` also needs ONNX Runtime (`pip install "gyrfalcon-rag[full]"` or
 `ORT_DYLIB_PATH`).
 
 The collection holds a lock on the directory until `close()`. Use it as a context manager to

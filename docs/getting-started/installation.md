@@ -2,9 +2,10 @@
 
 # Installation
 
-Gyrfalcon ships as a Python package (`gyrfalcon`), a Rust crate (`gyrfalcon`), and a command
-line (`gyr`). All three use the same engine and the same on-disk format, so a collection built
-by one opens in the others.
+Gyrfalcon ships as a Python package, a Rust crate (`gyrfalcon`), and a command line (`gyr`).
+The Python distribution is `gyrfalcon-rag` because `gyrfalcon` is already registered on PyPI;
+the import name is `gyrfalcon`. All three use the same engine and the same on-disk format, so a
+collection built by one opens in the others.
 
 | Component | Needed for | Required |
 |---|---|---|
@@ -18,19 +19,18 @@ The lite tier needs no model runtime at all. Most installs need nothing beyond t
 
 ## Python
 
-Python 3.9 or later. Wheels are built for Linux (x86_64, aarch64), macOS (arm64, x86_64), and
-Windows (x64), one abi3 wheel per platform.
+Python 3.9 or later. One abi3 wheel per platform covers that range.
 
 ```sh
-pip install gyrfalcon              # lite tier, text, Markdown, and HTML
-pip install "gyrfalcon[pdf]"       # adds PDF support through pypdfium2's PDFium
-pip install "gyrfalcon[full]"      # adds the full tier through onnxruntime
-pip install "gyrfalcon[full,pdf]"
+pip install gyrfalcon-rag              # lite tier, text, Markdown, and HTML
+pip install "gyrfalcon-rag[pdf]"       # adds PDF support through pypdfium2's PDFium
+pip install "gyrfalcon-rag[full]"      # adds the full tier through onnxruntime
+pip install "gyrfalcon-rag[full,pdf]"
 ```
 
-> [!NOTE]
-> The PyPI release is published by the `wheels` workflow when a `v*` tag is pushed. Until the
-> first tag, install from source as shown below.
+Wheels for Linux (x86_64 and aarch64), macOS (arm64 and x86_64), and Windows (x64) are built by
+[`.github/workflows/wheels.yml`](../../.github/workflows/wheels.yml) when a `v*` tag is pushed.
+Building from a clone is below.
 
 The extras do not add Python code paths. They install a library the engine loads at run time,
 and the package finds it on its own: `pypdfium2` ships PDFium, `onnxruntime` ships ONNX
