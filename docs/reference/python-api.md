@@ -26,7 +26,7 @@ from gyrfalcon import Collection, Hit, read_file, supported_extensions, models_d
 ## `Collection`
 
 ```python
-Collection(path, tier="lite", *, models=None, create=True)
+Collection(path, tier="lite", *, models=None, create=True, warm="background")
 ```
 
 Opens the collection in directory `path`, creating it when `create` is true and the directory
@@ -38,6 +38,7 @@ holds no collection. The tier's model is downloaded first if it is missing.
 | `tier` | `"lite"` or `"full"` | `"lite"` | The tier to create with, or to expect on open |
 | `models` | `str` or path-like | `None` | Root directory of tier models; `None` means `models_dir()` |
 | `create` | `bool` | `True` | Create the collection if it does not exist |
+| `warm` | `"none"`, `"background"`, or `"eager"` | `"background"` | When to read mapped search files into the page cache. `background` returns immediately and reads on a thread; an early query reads exact rows until those pages are resident. `eager` finishes before open returns. `none` does not read ahead. Same as `gyr --warm`. The default is from the gp3 open measurement in `bench/results/2026-10-29-warm-modes` |
 
 Raises `FileNotFoundError` when `create=False` and there is no collection at `path`, and
 `RuntimeError` when the collection was built with another tier or format, or another process

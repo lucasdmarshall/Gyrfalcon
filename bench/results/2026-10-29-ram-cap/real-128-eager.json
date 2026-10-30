@@ -1,0 +1,129 @@
+{
+  "label": "real-128-eager",
+  "collection": "/tmp/cols/quora",
+  "warm": "eager",
+  "max_mb": 128,
+  "collection_mb": 367.806343,
+  "model_mb": 130.703808,
+  "queries": 20,
+  "open_ms": 487.6049270023941,
+  "open_major_faults": 3415,
+  "open_read_bytes": 508264448,
+  "p50_ms": 13.066606006759685,
+  "p99_ms": 45.099416995071806,
+  "major_faults_p50": 31,
+  "read_bytes_p50": 4009984,
+  "read_bytes_mean": 9072844.8,
+  "memory_current": 129949696,
+  "memory_events": {
+    "low": 0,
+    "high": 0,
+    "max": 3333,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0
+  },
+  "samples": [
+    {
+      "ms": 45.099416995071806,
+      "major_faults": 161,
+      "read_bytes": 55730176
+    },
+    {
+      "ms": 14.310462996945716,
+      "major_faults": 58,
+      "read_bytes": 5632000
+    },
+    {
+      "ms": 11.702839998179115,
+      "major_faults": 24,
+      "read_bytes": 3817472
+    },
+    {
+      "ms": 12.849243001255672,
+      "major_faults": 37,
+      "read_bytes": 4091904
+    },
+    {
+      "ms": 12.893787999928463,
+      "major_faults": 40,
+      "read_bytes": 5054464
+    },
+    {
+      "ms": 12.439523998182267,
+      "major_faults": 8,
+      "read_bytes": 3469312
+    },
+    {
+      "ms": 12.790456996299326,
+      "major_faults": 10,
+      "read_bytes": 3657728
+    },
+    {
+      "ms": 14.301301998784766,
+      "major_faults": 23,
+      "read_bytes": 3948544
+    },
+    {
+      "ms": 13.066606006759685,
+      "major_faults": 19,
+      "read_bytes": 3682304
+    },
+    {
+      "ms": 14.391190998139791,
+      "major_faults": 29,
+      "read_bytes": 3977216
+    },
+    {
+      "ms": 12.248676001036074,
+      "major_faults": 11,
+      "read_bytes": 3612672
+    },
+    {
+      "ms": 12.378147002891637,
+      "major_faults": 10,
+      "read_bytes": 3653632
+    },
+    {
+      "ms": 20.06187100050738,
+      "major_faults": 85,
+      "read_bytes": 19996672
+    },
+    {
+      "ms": 31.769351997354534,
+      "major_faults": 48,
+      "read_bytes": 33882112
+    },
+    {
+      "ms": 13.490444005583413,
+      "major_faults": 62,
+      "read_bytes": 6455296
+    },
+    {
+      "ms": 13.483002003340516,
+      "major_faults": 31,
+      "read_bytes": 5410816
+    },
+    {
+      "ms": 14.215948998753447,
+      "major_faults": 21,
+      "read_bytes": 3584000
+    },
+    {
+      "ms": 12.414192999131046,
+      "major_faults": 31,
+      "read_bytes": 4009984
+    },
+    {
+      "ms": 11.873088995344006,
+      "major_faults": 33,
+      "read_bytes": 4104192
+    },
+    {
+      "ms": 13.035389005381148,
+      "major_faults": 17,
+      "read_bytes": 3686400
+    }
+  ],
+  "cgroup_parent_note": "/sys/fs/cgroup/system.slice/pod-7eivxgb5x5fv5eiegmtaccynqa-8c6e1245/cursor-agent"
+}

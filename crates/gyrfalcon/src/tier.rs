@@ -104,16 +104,31 @@ impl Tier {
 
     /// Loads the tier's embedder from `model_dir`.
     pub fn embedder(self, model_dir: &Path) -> Result<Box<dyn Embedder>> {
-        Ok(match self {
+        let embedder: Box<dyn Embedder> = match self {
             Tier::Lite => Box::new(StaticEmbedder::from_dir(model_dir, self.model_id())?),
             Tier::Full => Box::new(SessionEmbedder::new(OrtModel::load(model_dir)?, self.model_id())),
-        })
+        };
+        embedder.warm();
+        Ok(embedder)
     }
 
     /// Opens the collection at `dir`, creating it when `create` is set and it does not exist,
     /// with this tier's identity, embedder, and fusion. The open gate runs before the model
     /// loads, so a collection of the other tier is refused without loading anything.
     pub fn open(self, dir: &Path, model_dir: &Path, create: bool) -> Result<Index> {
+        self.open_warming(dir, model_dir, create, crate::warm::Warmup::default())
+    }
+
+    /// `open` with an explicit page-cache warmup. The model is loaded before `warmup` runs, so
+    /// a background read includes the static table. An ONNX session still loads on this thread:
+    /// it cannot answer a query until its weights are read.
+    pub fn open_warming(
+        self,
+        dir: &Path,
+        model_dir: &Path,
+        create: bool,
+        warmup: crate::warm::Warmup,
+    ) -> Result<Index> {
         if !model_dir.is_dir() {
             return Err(Error::ModelUnavailable(format!(
                 "the {} tier's model is not at {}",
@@ -125,9 +140,15 @@ impl Tier {
         let mut index = if create && !dir.join("manifest.json").exists() {
             Index::create(dir, &config)?
         } else {
-            Index::open(dir, &config)?
+            Index::open_with_warmup(dir, &config, crate::warm::Warmup::None)?
         };
-        let embedder = self.embedder(model_dir)?;
+        let embedder: Box<dyn Embedder> = match self {
+            Tier::Lite => Box::new(StaticEmbedder::from_dir(model_dir, self.model_id())?),
+            Tier::Full => Box::new(SessionEmbedder::new(
+                OrtModel::load_prefetch(model_dir, warmup == crate::warm::Warmup::Eager)?,
+                self.model_id(),
+            )),
+        };
         if embedder.dimension() != config.dimension {
             return Err(Error::Embed(format!(
                 "the model makes {}-dimensional vectors, the collection holds {}",
@@ -137,6 +158,7 @@ impl Tier {
         }
         index.set_embedder(embedder);
         index.fusion = self.fusion();
+        index.warmup(warmup)?;
         Ok(index)
     }
 }

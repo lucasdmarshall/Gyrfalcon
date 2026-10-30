@@ -1,11 +1,11 @@
-//! Opening a collection reads its mapped search files into the page cache, so the first query
-//! does not fault them one page at a time.
+//! `Index::open` prefetches mapped search files on a background thread. `Warmup::Eager` finishes
+//! that read before it returns, which is what the residency checks below pin down.
 
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
-use gyrfalcon::{Document, Index, IndexConfig};
+use gyrfalcon::{Document, Index, IndexConfig, RetrieveOptions, Warmup};
 
 extern "C" {
     fn mmap(
@@ -118,10 +118,75 @@ fn open_loads_search_files_into_the_page_cache() {
     assert!(pages > 1, "vectors.bin has {pages} pages; the fixture must span more than one");
     assert!(resident < pages, "eviction left vectors.bin fully resident ({resident}/{pages})");
 
-    Index::open(dir.path(), &config).unwrap();
+    Index::open_with_warmup(dir.path(), &config, Warmup::Eager).unwrap();
 
     for path in &paths {
         let (resident, pages) = resident_pages(path);
+        assert_eq!(resident, pages, "{} has {resident}/{pages} pages resident", path.display());
+    }
+}
+
+fn fixture() -> (tempfile::TempDir, IndexConfig) {
+    let dir = tempfile::tempdir().unwrap();
+    let config = IndexConfig::test_default();
+    let mut index = Index::create(dir.path(), &config).unwrap();
+    index.write_buffer = 0;
+    let rows: Vec<_> = (0..80)
+        .map(|i| {
+            let mut vector = vec![0f32; 384];
+            vector[i % 384] = 1.0;
+            let body = format!("document {i} about retrieval {}", "word ".repeat(30));
+            (Document::body(format!("d{i}"), body), vector)
+        })
+        .collect();
+    index.index_documents_with_vectors(&rows).unwrap();
+    drop(index);
+    (dir, config)
+}
+
+fn ranked(index: &Index) -> Vec<String> {
+    index
+        .retrieve("document 3 about retrieval", RetrieveOptions { rerank: false, limit: 5 })
+        .unwrap()
+        .hits
+        .into_iter()
+        .map(|hit| hit.doc_id)
+        .collect()
+}
+
+#[test]
+fn open_without_warmup_leaves_the_vectors_cold_and_still_ranks() {
+    let (dir, config) = fixture();
+    let eager = Index::open(dir.path(), &config).unwrap();
+    let expected = ranked(&eager);
+    assert!(!expected.is_empty());
+    drop(eager);
+
+    for path in files_named(dir.path(), "vectors.bin") {
+        evict(&path);
+        let (resident, pages) = resident_pages(&path);
+        assert!(resident < pages, "eviction left vectors resident");
+    }
+    let cold = Index::open_with_warmup(dir.path(), &config, Warmup::None).unwrap();
+    assert_eq!(cold.warm_name(), "none");
+    for path in files_named(dir.path(), "vectors.bin") {
+        let (resident, pages) = resident_pages(&path);
+        assert!(resident < pages, "warm=none faulted vectors.bin ({resident}/{pages})");
+    }
+    assert_eq!(ranked(&cold), expected);
+}
+
+#[test]
+fn background_warmup_makes_the_vectors_resident() {
+    let (dir, config) = fixture();
+    for path in files_named(dir.path(), "vectors.bin") {
+        evict(&path);
+    }
+    let index = Index::open_with_warmup(dir.path(), &config, Warmup::Background).unwrap();
+    assert_eq!(index.warm_name(), "background");
+    index.wait_for_warm();
+    for path in files_named(dir.path(), "vectors.bin") {
+        let (resident, pages) = resident_pages(&path);
         assert_eq!(resident, pages, "{} has {resident}/{pages} pages resident", path.display());
     }
 }
