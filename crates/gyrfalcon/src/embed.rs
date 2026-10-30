@@ -19,6 +19,8 @@ pub trait Embedder: Send + Sync {
     }
     fn model_id(&self) -> &str;
     fn dimension(&self) -> u32;
+    /// Faults a mapped embedding table. A model that was copied into the session does nothing.
+    fn warm(&self) {}
     /// Texts a recording test double has seen. Production embedders record nothing.
     fn recorded(&self) -> Vec<String> {
         Vec::new()

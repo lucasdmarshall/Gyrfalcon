@@ -8,6 +8,48 @@
 use std::io::Read;
 use std::path::Path;
 
+/// When mapped search files are read into the page cache.
+///
+/// `Eager` finishes the read before open returns. `None` leaves it to the query, which reads
+/// exact rows while pages are missing. `Background` returns immediately and reads on another
+/// thread; a query that arrives early uses the same exact-row path until the pages are resident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Warmup {
+    None,
+    Background,
+    Eager,
+}
+
+impl Warmup {
+    pub fn parse(text: &str) -> Option<Warmup> {
+        match text {
+            "none" => Some(Warmup::None),
+            "background" => Some(Warmup::Background),
+            "eager" => Some(Warmup::Eager),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Warmup::None => "none",
+            Warmup::Background => "background",
+            Warmup::Eager => "eager",
+        }
+    }
+}
+
+impl Default for Warmup {
+    /// `background` is the default. On the 2026-10-29 gp3 profile, `eager` held FiQA's open for
+    /// 1.1 s and Quora's for 5.6 s, and the time to the first hit was slower than doing nothing.
+    /// `background` returns at the unwarmed open (about 170 ms and 360 ms) and the prefetch
+    /// catches a kept-open process up to the eager query latency. The first query itself stays
+    /// at the unwarmed latency. See `bench/results/2026-10-29-warm-modes/README.md`.
+    fn default() -> Self {
+        Warmup::Background
+    }
+}
+
 /// Bytes per `read` for a file that is not already mapped. A mebibyte keeps the scan sequential.
 const CHUNK: usize = 1024 * 1024;
 const PAGE: usize = 4096;
@@ -128,7 +170,7 @@ pub fn read_ranges(file: &std::fs::File, ranges: &[(u64, usize)]) -> std::io::Re
 
 #[cfg(test)]
 mod tests {
-    use super::read_ranges;
+    use super::{read_ranges, Warmup};
 
     #[test]
     fn read_ranges_returns_the_bytes_at_each_offset() {
@@ -142,5 +184,14 @@ mod tests {
         for ((offset, len), buf) in ranges.iter().zip(&got) {
             assert_eq!(buf, &bytes[*offset as usize..*offset as usize + *len]);
         }
+    }
+
+    #[test]
+    fn warmup_names_round_trip() {
+        for mode in [Warmup::None, Warmup::Background, Warmup::Eager] {
+            assert_eq!(Warmup::parse(mode.name()), Some(mode));
+        }
+        assert_eq!(Warmup::parse("later"), None);
+        assert_eq!(Warmup::default(), Warmup::Background);
     }
 }

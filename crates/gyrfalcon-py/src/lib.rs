@@ -116,12 +116,21 @@ impl Collection {
 #[pymethods]
 impl Collection {
     /// Opens the collection at `path`, creating it when `create` is true and it does not exist.
-    /// `model_dir` holds the tier's model files.
+    /// `model_dir` holds the tier's model files. `warm` is `none`, `background`, or `eager`.
     #[new]
-    #[pyo3(signature = (path, model_dir, tier = "lite", create = true))]
-    fn new(py: Python<'_>, path: PathBuf, model_dir: PathBuf, tier: &str, create: bool) -> PyResult<Collection> {
+    #[pyo3(signature = (path, model_dir, tier = "lite", create = true, warm = "background"))]
+    fn new(
+        py: Python<'_>,
+        path: PathBuf,
+        model_dir: PathBuf,
+        tier: &str,
+        create: bool,
+        warm: &str,
+    ) -> PyResult<Collection> {
         let tier = parse_tier(tier)?;
-        let index = py.detach(|| tier.open(&path, &model_dir, create)).map_err(engine_error)?;
+        let warm = gyrfalcon::Warmup::parse(warm)
+            .ok_or_else(|| PyValueError::new_err("warm must be \"none\", \"background\", or \"eager\""))?;
+        let index = py.detach(|| tier.open_warming(&path, &model_dir, create, warm)).map_err(engine_error)?;
         Ok(Collection { index: RwLock::new(Some(index)), path, tier })
     }
 
