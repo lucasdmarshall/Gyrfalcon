@@ -1,0 +1,230 @@
+{
+  "datasets": [
+    {
+      "dataset": "scifact",
+      "docs": 5183,
+      "docs_per_sec": 21371.063528853014,
+      "index_seconds": 0.242524196,
+      "queries": 300,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.674074074074074,
+          "ndcg_at_10": 0.7088063289765038,
+          "query_p50_ms": 1.240957,
+          "query_p99_ms": 1.946162,
+          "recall_at_100": 0.9282222222222223
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.6566574074074074,
+          "ndcg_at_10": 0.6978019053189267,
+          "query_p50_ms": 1.111551,
+          "query_p99_ms": 1.726963,
+          "recall_at_100": 0.9586666666666668
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "nfcorpus",
+      "docs": 3633,
+      "docs_per_sec": 20455.213001461754,
+      "index_seconds": 0.177607537,
+      "queries": 323,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5494348616639639,
+          "ndcg_at_10": 0.34352287346135096,
+          "query_p50_ms": 1.168005,
+          "query_p99_ms": 1.8571600000000001,
+          "recall_at_100": 0.2888999637710271
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.5494999754287679,
+          "ndcg_at_10": 0.339452495149632,
+          "query_p50_ms": 1.02589,
+          "query_p99_ms": 1.633026,
+          "recall_at_100": 0.30678241084878316
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "arguana",
+      "docs": 8674,
+      "docs_per_sec": 31203.155920429035,
+      "index_seconds": 0.277984702,
+      "queries": 1406,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.4046428006954321,
+          "ndcg_at_10": 0.49122865489132983,
+          "query_p50_ms": 1.417867,
+          "query_p99_ms": 1.796656,
+          "recall_at_100": 0.9679943100995733
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.4008066337013704,
+          "ndcg_at_10": 0.48928831009346957,
+          "query_p50_ms": 1.2913700000000001,
+          "query_p99_ms": 1.931488,
+          "recall_at_100": 0.972972972972973
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "fiqa",
+      "docs": 57638,
+      "docs_per_sec": 52062.56781087809,
+      "index_seconds": 1.107090995,
+      "queries": 648,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.31838563100137174,
+          "ndcg_at_10": 0.26586065675741455,
+          "query_p50_ms": 1.843309,
+          "query_p99_ms": 2.238263,
+          "recall_at_100": 0.5513896425933461
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.2866028561630412,
+          "ndcg_at_10": 0.2431658392504745,
+          "query_p50_ms": 1.673928,
+          "query_p99_ms": 1.9304210000000002,
+          "recall_at_100": 0.5620633610216943
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "trec-covid",
+      "docs": 171332,
+      "docs_per_sec": 21701.254373731284,
+      "index_seconds": 7.895027497,
+      "queries": 50,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.9283333333333332,
+          "ndcg_at_10": 0.6797374399089415,
+          "query_p50_ms": 2.6297040000000003,
+          "query_p99_ms": 7.225596,
+          "recall_at_100": 0.11103000493172673
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.859857142857143,
+          "ndcg_at_10": 0.6311662560198706,
+          "query_p50_ms": 2.257392,
+          "query_p99_ms": 2.9811199999999998,
+          "recall_at_100": 0.10183146642487491
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "scidocs",
+      "docs": 25657,
+      "docs_per_sec": 37706.15332678406,
+      "index_seconds": 0.680445968,
+      "queries": 1000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.28055198412698384,
+          "ndcg_at_10": 0.16458821003880317,
+          "query_p50_ms": 1.588589,
+          "query_p99_ms": 1.843303,
+          "recall_at_100": 0.3607833333333324
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.2685845238095237,
+          "ndcg_at_10": 0.15845571139373846,
+          "query_p50_ms": 1.4437129999999998,
+          "query_p99_ms": 1.598428,
+          "recall_at_100": 0.3789833333333322
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "quora",
+      "docs": 522931,
+      "docs_per_sec": 136251.85579158153,
+      "index_seconds": 3.837973413,
+      "queries": 10000,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.8299372619047579,
+          "ndcg_at_10": 0.8343980230480278,
+          "query_p50_ms": 4.105476,
+          "query_p99_ms": 4.926996,
+          "recall_at_100": 0.9781017915071374
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.8115592063492015,
+          "ndcg_at_10": 0.8177981151058588,
+          "query_p50_ms": 3.9551300000000005,
+          "query_p99_ms": 4.290182,
+          "recall_at_100": 0.9860461134137138
+        }
+      ],
+      "split": "test"
+    },
+    {
+      "dataset": "webis-touche2020",
+      "docs": 382545,
+      "docs_per_sec": 12815.421942720624,
+      "index_seconds": 29.850363235,
+      "queries": 49,
+      "rerank": false,
+      "results": [
+        {
+          "fusion": "configured",
+          "mrr_at_10": 0.5429381276320051,
+          "ndcg_at_10": 0.3183052541357152,
+          "query_p50_ms": 3.802906,
+          "query_p99_ms": 10.496772,
+          "recall_at_100": 0.5534031797094919
+        },
+        {
+          "fusion": "rrf",
+          "mrr_at_10": 0.5448655652737285,
+          "ndcg_at_10": 0.3089317717089193,
+          "query_p50_ms": 3.315133,
+          "query_p99_ms": 4.605407,
+          "recall_at_100": 0.559713864914232
+        }
+      ],
+      "split": "test"
+    }
+  ],
+  "environment": {
+    "analyzer_id": "gyr-text-v2",
+    "cpu_model": "Intel(R) Xeon(R) Processor",
+    "dimension": 512,
+    "git_revision": "61a4293b7e9c566371aad7617d400b9a4c3b3d69",
+    "model_id": "minishlab/potion-retrieval-32M",
+    "ort_intra_threads": 4,
+    "physical_cores": 4,
+    "quantization": "i8"
+  }
+}
