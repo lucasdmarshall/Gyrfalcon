@@ -1,13 +1,15 @@
 //! ONNX Runtime sessions for the embedder and the cross-encoder reranker.
 //!
 //! `ort` is built with `load-dynamic`: the runtime library is found through `ORT_DYLIB_PATH`
-//! or the system library path when the first session is created.
+//! or the system library path when the first session is created. When that library was built
+//! with them, a session tries CUDA and then OpenVINO before the CPU provider.
 
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use std::borrow::Cow;
 
+use ort::ep::ExecutionProvider;
 use ort::session::{Session, SessionInputValue};
 use ort::value::Tensor;
 use tokenizers::{EncodeInput, Tokenizer};
@@ -19,6 +21,51 @@ pub const MAX_TOKENS: usize = 512;
 
 fn model_error(err: impl std::fmt::Display) -> Error {
     Error::ModelUnavailable(err.to_string())
+}
+
+/// Hardware tried before the CPU provider, fastest device first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accelerator {
+    /// NVIDIA GPU through ONNX Runtime's CUDA execution provider.
+    Cuda,
+    /// Intel CPU through ONNX Runtime's OpenVINO execution provider.
+    OpenVino,
+}
+
+/// Which accelerators a session should register.
+///
+/// `choice` is `GYR_ORT_EP`: empty or `auto` keeps both, `cuda` or `openvino` keeps one,
+/// and `cpu` keeps neither. A provider the loaded library was not built with is skipped.
+pub fn accelerator_plan(choice: &str, cuda_available: bool, openvino_available: bool) -> Vec<Accelerator> {
+    let (want_cuda, want_openvino) = match choice.trim().to_ascii_lowercase().as_str() {
+        "cuda" => (true, false),
+        "openvino" => (false, true),
+        "cpu" | "none" => (false, false),
+        _ => (true, true),
+    };
+    let mut plan = Vec::new();
+    if want_cuda && cuda_available {
+        plan.push(Accelerator::Cuda);
+    }
+    if want_openvino && openvino_available {
+        plan.push(Accelerator::OpenVino);
+    }
+    plan
+}
+
+fn execution_providers(plan: &[Accelerator]) -> Vec<ort::ep::ExecutionProviderDispatch> {
+    plan.iter()
+        .map(|accelerator| match accelerator {
+            Accelerator::Cuda => ort::ep::CUDA::default()
+                .with_conv_algorithm_search(ort::ep::cuda::ConvAlgorithmSearch::Heuristic)
+                .build(),
+            Accelerator::OpenVino => ort::ep::OpenVINO::default()
+                .with_device_type("CPU")
+                .with_num_threads(intra_threads())
+                .with_dynamic_shapes(true)
+                .build(),
+        })
+        .collect()
 }
 
 /// Intra-op threads: `min(4, physical cores)` unless `GYR_ORT_THREADS` overrides it.
@@ -52,6 +99,9 @@ pub struct OrtModel {
     /// Token budget enforced by the tokenizer (longest-first for pairs, keeping the final
     /// `[SEP]`). `None` cuts each encoding at `MAX_TOKENS` after tokenizing.
     max_tokens: Option<usize>,
+    /// Providers registered ahead of CPU. Empty when the library has neither, or `GYR_ORT_EP`
+    /// asked for CPU only.
+    accelerators: Vec<Accelerator>,
 }
 
 impl OrtModel {
@@ -90,13 +140,22 @@ impl OrtModel {
                 }))
                 .map_err(model_error)?;
         }
-        let mut builder = Session::builder(environment()?)
+        let environment = environment()?;
+        let accelerators = accelerator_plan(
+            &std::env::var("GYR_ORT_EP").unwrap_or_default(),
+            ort::ep::CUDA::is_available().unwrap_or(false),
+            ort::ep::OpenVINO::is_available().unwrap_or(false),
+        );
+        let mut builder = Session::builder(environment)
             .map_err(model_error)?
             .with_intra_threads(intra_threads())
             .map_err(model_error)?
             // Idle ort threads would otherwise spin on the cores retrieval needs.
             .with_intra_op_spinning(false)
             .map_err(model_error)?;
+        if !accelerators.is_empty() {
+            builder = builder.with_execution_providers(execution_providers(&accelerators)).map_err(model_error)?;
+        }
         // The session reads the weights as it loads. Doing it sequentially first keeps that
         // read off a cold, random fault path when the runtime maps the file. `none` and
         // `background` skip it: the session load is the read, and it cannot return earlier.
@@ -111,7 +170,13 @@ impl OrtModel {
             .and_then(|output| output.dtype().tensor_shape())
             .and_then(|shape| shape.last().copied())
             .unwrap_or(-1);
-        Ok(OrtModel { session: Mutex::new(session), tokenizer, input_names, output_width, max_tokens })
+        Ok(OrtModel { session: Mutex::new(session), tokenizer, input_names, output_width, max_tokens, accelerators })
+    }
+
+    /// Providers this session asked for, CUDA before OpenVINO. A library without one of them
+    /// leaves it out, and ONNX Runtime still falls back to CPU if registration fails.
+    pub fn accelerators(&self) -> &[Accelerator] {
+        &self.accelerators
     }
 
     pub fn output_width(&self) -> i64 {
@@ -195,5 +260,32 @@ impl OrtModel {
         let (shape, data) = self.run(inputs)?;
         let per_row = shape.iter().skip(1).product::<i64>().max(1) as usize;
         Ok(data.chunks(per_row).map(|row| row[0]).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{accelerator_plan, Accelerator};
+
+    #[test]
+    fn auto_tries_cuda_before_openvino() {
+        assert_eq!(accelerator_plan("auto", true, true), vec![Accelerator::Cuda, Accelerator::OpenVino]);
+        assert_eq!(accelerator_plan("", true, true), vec![Accelerator::Cuda, Accelerator::OpenVino]);
+    }
+
+    #[test]
+    fn unavailable_provider_is_left_out() {
+        assert_eq!(accelerator_plan("auto", false, true), vec![Accelerator::OpenVino]);
+        assert_eq!(accelerator_plan("auto", true, false), vec![Accelerator::Cuda]);
+        assert!(accelerator_plan("auto", false, false).is_empty());
+    }
+
+    #[test]
+    fn explicit_choice_keeps_one_provider() {
+        assert_eq!(accelerator_plan("cuda", true, true), vec![Accelerator::Cuda]);
+        assert_eq!(accelerator_plan("OpenVINO", true, true), vec![Accelerator::OpenVino]);
+        assert!(accelerator_plan("cuda", false, true).is_empty());
+        assert!(accelerator_plan("cpu", true, true).is_empty());
+        assert!(accelerator_plan("none", true, true).is_empty());
     }
 }

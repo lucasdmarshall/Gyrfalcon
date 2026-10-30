@@ -94,6 +94,7 @@ When `--fusion` names another rule than the tier's, its weight defaults to 0.45 
 | `ORT_DYLIB_PATH` | engine | Path of the ONNX Runtime library. Python sets it from the `onnxruntime` package when unset |
 | `GYR_PDFIUM` | ingest | PDFium library or its directory. Python sets it from the `pypdfium2` package when unset |
 | `GYR_ORT_THREADS` | engine | ONNX Runtime intra-op threads; default `min(4, cores)` |
+| `GYR_ORT_EP` | engine | Full-tier providers before CPU: `auto` (CUDA, then OpenVINO), `cuda`, `openvino`, or `cpu`. A provider the loaded ONNX Runtime was not built with is skipped. Speed on CUDA or OpenVINO is unmeasured |
 | `GYR_TIER`, `GYR_EMBEDDER`, `GYR_MODEL_DIR`, `GYR_MODEL_ID`, `GYR_EMBED_URL`, `GYR_RERANKER_DIR`, `GYR_WARM` | CLI | Defaults for the flags of the same name |
 | `GYR_CHAT_ENDPOINT`, `GYR_CHAT_MODEL` | CLI | Defaults for `--chat-endpoint`, `--chat-model` |
 | `GYR_CHAT_API_KEY` | CLI | Bearer token sent to the chat endpoint |
