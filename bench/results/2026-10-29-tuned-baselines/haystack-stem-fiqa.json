@@ -1,0 +1,14 @@
+{
+ "system": "haystack-stem",
+ "dataset": "fiqa",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 57638,
+ "queries": 648,
+ "index_seconds": 12.109014219997334,
+ "query_p50_ms": 1228.704724002455,
+ "query_p99_ms": 1398.4715760016115,
+ "query_mean_ms": 1121.0696199381975,
+ "ndcg_at_10": 0.24456590245701573,
+ "recall_at_100": 0.5573272706374558
+}

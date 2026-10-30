@@ -1,0 +1,14 @@
+{
+ "system": "langchain-stem",
+ "dataset": "nfcorpus",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 3633,
+ "queries": 323,
+ "index_seconds": 1.6722433739996632,
+ "query_p50_ms": 38.426876002631616,
+ "query_p99_ms": 43.14342200086685,
+ "query_mean_ms": 38.67155528483979,
+ "ndcg_at_10": 0.307282371124538,
+ "recall_at_100": 0.2952848837253086
+}

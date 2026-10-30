@@ -1,0 +1,14 @@
+{
+ "system": "haystack-stem",
+ "dataset": "arguana",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 8674,
+ "queries": 1406,
+ "index_seconds": 2.348411186001613,
+ "query_p50_ms": 277.75347200076794,
+ "query_p99_ms": 453.9648319987464,
+ "query_mean_ms": 286.1832200376514,
+ "ndcg_at_10": 0.4259827720701367,
+ "recall_at_100": 0.9601706970128022
+}

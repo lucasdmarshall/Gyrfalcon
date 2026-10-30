@@ -1,0 +1,14 @@
+{
+ "system": "langchain-stem",
+ "dataset": "fiqa",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 57638,
+ "queries": 648,
+ "index_seconds": 12.537062812996737,
+ "query_p50_ms": 808.7014319971786,
+ "query_p99_ms": 950.5433840022306,
+ "query_mean_ms": 819.1941014582779,
+ "ndcg_at_10": 0.23732160978130362,
+ "recall_at_100": 0.5524312535886611
+}

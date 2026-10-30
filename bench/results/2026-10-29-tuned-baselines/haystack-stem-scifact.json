@@ -1,0 +1,14 @@
+{
+ "system": "haystack-stem",
+ "dataset": "scifact",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 5183,
+ "queries": 300,
+ "index_seconds": 1.9804671940000844,
+ "query_p50_ms": 101.78278000239516,
+ "query_p99_ms": 171.63479800365167,
+ "query_mean_ms": 105.21139238328033,
+ "ndcg_at_10": 0.6908310923681508,
+ "recall_at_100": 0.9586666666666668
+}

@@ -1,0 +1,14 @@
+{
+ "system": "langchain-stem",
+ "dataset": "arguana",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 8674,
+ "queries": 1406,
+ "index_seconds": 2.5121020790029434,
+ "query_p50_ms": 253.49963099870365,
+ "query_p99_ms": 550.9814369943342,
+ "query_mean_ms": 270.11730844034753,
+ "ndcg_at_10": 0.42598323085957596,
+ "recall_at_100": 0.9231863442389758
+}
