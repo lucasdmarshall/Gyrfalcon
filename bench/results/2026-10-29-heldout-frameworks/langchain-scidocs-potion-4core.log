@@ -1,0 +1,45 @@
+/workspace/bench/compare/run_framework.py:56: DeprecationWarning: `langchain-community` is being sunset and is no longer actively maintained. See https://github.com/langchain-ai/langchain-community/issues/674 for details and migration guidance toward standalone integration packages.
+  from langchain_community.retrievers import BM25Retriever
+indexed 25657 docs in 6.0s, querying 1000
+query 1/1000 last_ms 383.2
+query 25/1000 last_ms 329.3
+query 50/1000 last_ms 343.6
+query 75/1000 last_ms 331.1
+query 100/1000 last_ms 356.2
+query 125/1000 last_ms 353.2
+query 150/1000 last_ms 350.5
+query 175/1000 last_ms 354.9
+query 200/1000 last_ms 326.5
+query 225/1000 last_ms 328.4
+query 250/1000 last_ms 382.7
+query 275/1000 last_ms 340.6
+query 300/1000 last_ms 333.2
+query 325/1000 last_ms 360.9
+query 350/1000 last_ms 345.9
+query 375/1000 last_ms 357.4
+query 400/1000 last_ms 357.5
+query 425/1000 last_ms 393.4
+query 450/1000 last_ms 351.1
+query 475/1000 last_ms 329.3
+query 500/1000 last_ms 364.6
+query 525/1000 last_ms 365.4
+query 550/1000 last_ms 380.7
+query 575/1000 last_ms 455.7
+query 600/1000 last_ms 367.6
+query 625/1000 last_ms 364.6
+query 650/1000 last_ms 368.5
+query 675/1000 last_ms 351.2
+query 700/1000 last_ms 339.1
+query 725/1000 last_ms 379.4
+query 750/1000 last_ms 327.6
+query 775/1000 last_ms 342.4
+query 800/1000 last_ms 337.0
+query 825/1000 last_ms 387.9
+query 850/1000 last_ms 349.6
+query 875/1000 last_ms 379.9
+query 900/1000 last_ms 368.7
+query 925/1000 last_ms 459.9
+query 950/1000 last_ms 370.1
+query 975/1000 last_ms 361.4
+query 1000/1000 last_ms 327.1
+{"system": "langchain", "dataset": "scidocs", "embedder": "potion", "threads": 4, "docs": 25657, "queries": 1000, "index_seconds": 6.029648256000655, "query_p50_ms": 356.94276000140235, "query_p99_ms": 501.9617689977167, "query_mean_ms": 365.29937416706883, "ndcg_at_10": 0.12703154225324312, "recall_at_100": 0.34051666666666663}

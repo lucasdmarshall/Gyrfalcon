@@ -1,0 +1,5 @@
+indexed 171332 docs in 36.3s, querying 50
+query 1/50 last_ms 4172.4
+query 25/50 last_ms 4158.9
+query 50/50 last_ms 2601.1
+{"system": "haystack", "dataset": "trec-covid", "embedder": "potion", "threads": 4, "docs": 171332, "queries": 50, "index_seconds": 36.26668425299795, "query_p50_ms": 4073.3251630008454, "query_p99_ms": 5350.797506998788, "query_mean_ms": 3875.022852140173, "ndcg_at_10": 0.6016170121305702, "recall_at_100": 0.0964025645786148}

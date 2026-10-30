@@ -1,0 +1,14 @@
+{
+ "system": "langchain",
+ "dataset": "scidocs",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 25657,
+ "queries": 1000,
+ "index_seconds": 6.029648256000655,
+ "query_p50_ms": 356.94276000140235,
+ "query_p99_ms": 501.9617689977167,
+ "query_mean_ms": 365.29937416706883,
+ "ndcg_at_10": 0.12703154225324312,
+ "recall_at_100": 0.34051666666666663
+}

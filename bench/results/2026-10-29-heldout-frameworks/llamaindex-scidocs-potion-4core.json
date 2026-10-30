@@ -1,0 +1,14 @@
+{
+ "system": "llamaindex",
+ "dataset": "scidocs",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 25657,
+ "queries": 1000,
+ "index_seconds": 9.674800177002908,
+ "query_p50_ms": 338.5870390011405,
+ "query_p99_ms": 374.08353900173097,
+ "query_mean_ms": 340.75815466000125,
+ "ndcg_at_10": 0.15713212248281083,
+ "recall_at_100": 0.38026666666666664
+}

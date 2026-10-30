@@ -1,0 +1,14 @@
+{
+ "system": "haystack",
+ "dataset": "webis-touche2020",
+ "embedder": "potion",
+ "threads": 4,
+ "docs": 382545,
+ "queries": 49,
+ "index_seconds": 106.27995229999942,
+ "query_p50_ms": 8830.247737001628,
+ "query_p99_ms": 14453.859757999453,
+ "query_mean_ms": 9084.281762734612,
+ "ndcg_at_10": 0.33372074299506976,
+ "recall_at_100": 0.5765660714402114
+}

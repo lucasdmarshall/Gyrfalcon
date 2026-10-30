@@ -1,0 +1,7 @@
+/workspace/bench/compare/run_framework.py:56: DeprecationWarning: `langchain-community` is being sunset and is no longer actively maintained. See https://github.com/langchain-ai/langchain-community/issues/674 for details and migration guidance toward standalone integration packages.
+  from langchain_community.retrievers import BM25Retriever
+indexed 171332 docs in 36.0s, querying 50
+query 1/50 last_ms 3029.5
+query 25/50 last_ms 2530.3
+query 50/50 last_ms 2464.6
+{"system": "langchain", "dataset": "trec-covid", "embedder": "potion", "threads": 4, "docs": 171332, "queries": 50, "index_seconds": 36.00357883400284, "query_p50_ms": 2682.6564369985135, "query_p99_ms": 3156.63252000013, "query_mean_ms": 2700.257896559924, "ndcg_at_10": 0.5432973931392445, "recall_at_100": 0.08035936119379686}
