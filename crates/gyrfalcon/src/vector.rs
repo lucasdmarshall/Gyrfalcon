@@ -556,6 +556,9 @@ fn corrupt(what: &str) -> Error {
 pub struct VectorSegment {
     codes: Mmap,
     vectors: Mmap,
+    /// Same file as `vectors`, kept so a cold query can read the exact rows without opening
+    /// the path again. A second open drops the page cache on FUSE.
+    vectors_file: std::fs::File,
     rows: usize,
     words: usize,
     rotation: Rotation,
@@ -575,7 +578,9 @@ impl VectorSegment {
             Ok(unsafe { Mmap::map(&file)? })
         };
         let codes = map("codes.bin")?;
-        let vectors = map("vectors.bin")?;
+        let vectors_file = std::fs::File::open(dir.join("vectors.bin"))?;
+        // SAFETY: sealed files never change; the reaper waits for readers to release.
+        let vectors = unsafe { Mmap::map(&vectors_file)? };
         if codes.len() < CODES_HEADER || &codes[..8] != CODES_MAGIC {
             return Err(corrupt("codes.bin has no header"));
         }
@@ -596,7 +601,17 @@ impl VectorSegment {
         if !(codes.as_ptr() as usize + CODES_HEADER).is_multiple_of(8) {
             return Err(corrupt("codes.bin is not mapped at an 8-byte boundary"));
         }
-        Ok(VectorSegment { codes, vectors, rows, words, rotation, quantization, dimension, dir: dir.to_path_buf() })
+        Ok(VectorSegment {
+            codes,
+            vectors,
+            vectors_file,
+            rows,
+            words,
+            rotation,
+            quantization,
+            dimension,
+            dir: dir.to_path_buf(),
+        })
     }
 
     fn centroid(&self) -> &[f32] {
@@ -617,15 +632,36 @@ impl VectorSegment {
         unsafe { std::slice::from_raw_parts(self.codes.as_ptr().add(at) as *const RowStats, self.rows) }
     }
 
+    fn row_len(&self) -> usize {
+        self.vectors.len() / self.rows.max(1)
+    }
+
     fn row(&self, ordinal: usize) -> &[u8] {
-        let len = self.vectors.len() / self.rows.max(1);
+        let len = self.row_len();
         &self.vectors[ordinal * len..(ordinal + 1) * len]
+    }
+
+    /// The stored rows are already in RAM, so the mapped bytes can be scored directly.
+    fn rows_resident(&self, rows: &[u32]) -> bool {
+        let len = self.row_len();
+        let ranges: Vec<(usize, usize)> = rows.iter().map(|row| (*row as usize * len, len)).collect();
+        crate::warm::ranges_resident(&self.vectors, &ranges)
     }
 
     /// The stored vector of `key` as `f32`, scaled as stored.
     pub fn stored_vector(&self, key: u64, ids: &[u64]) -> Option<Vec<f32>> {
         let ordinal = ids.binary_search(&key).ok()?;
         (ordinal < self.rows).then(|| row_values(self.quantization, self.row(ordinal)))
+    }
+
+    /// Faults `codes.bin` and `vectors.bin` in order. A query scans every code and then a
+    /// scattered set of vector rows; both have to be resident for that query to stay in RAM.
+    pub(crate) fn warm(&self) {
+        crate::warm::warm_map(&self.codes);
+        crate::warm::warm_map(&self.vectors);
+        // The rows a query rescores are scattered. After they are resident, later faults
+        // (a collection that no longer fits) should not pull the neighbors in again.
+        let _ = self.vectors.advise(memmap2::Advice::Random);
     }
 
     /// Files this segment keeps mapped for search.
@@ -713,6 +749,30 @@ impl VectorSegment {
         // page cache both prefer.
         rows.sort_unstable();
         let query_norm = query_norm(self.quantization, query);
+        // A cold page fault also pulls the neighboring pages. Read just these rows, queued
+        // together, when any of them is still on disk.
+        if !self.rows_resident(rows) {
+            let len = self.row_len();
+            let ranges: Vec<(u64, usize)> = rows.iter().map(|row| (*row as u64 * len as u64, len)).collect();
+            if let Ok(buffers) = crate::warm::read_ranges(&self.vectors_file, &ranges) {
+                return rows
+                    .iter()
+                    .zip(buffers)
+                    .map(|(row, bytes)| {
+                        (
+                            ids[*row as usize],
+                            exact_distance(
+                                self.quantization,
+                                query,
+                                query_norm,
+                                &bytes,
+                                self.stats()[*row as usize].norm,
+                            ),
+                        )
+                    })
+                    .collect();
+            }
+        }
         let mut hits = Vec::with_capacity(rows.len());
         for (at, row) in rows.iter().enumerate() {
             if let Some(ahead) = rows.get(at + PREFETCH_AHEAD) {
@@ -1010,6 +1070,20 @@ mod tests {
 
     fn norm_i8(row: &[u8]) -> f32 {
         (as_i8(row).iter().map(|v| i32::from(*v) * i32::from(*v)).sum::<i32>() as f32).sqrt()
+    }
+
+    #[test]
+    fn scattered_row_reads_match_the_mapping() {
+        let rows = clustered_rows(50, 64, 9);
+        let dir = tempfile::tempdir().unwrap();
+        let (segment, _) = segment_of(dir.path(), Quantization::I8, &rows);
+        let want = [0u32, 7, 49, 3];
+        let len = segment.row_len();
+        let ranges: Vec<(u64, usize)> = want.iter().map(|row| (*row as u64 * len as u64, len)).collect();
+        let got = crate::warm::read_ranges(&segment.vectors_file, &ranges).unwrap();
+        for (row, bytes) in want.iter().zip(&got) {
+            assert_eq!(bytes, segment.row(*row as usize));
+        }
     }
 
     #[test]

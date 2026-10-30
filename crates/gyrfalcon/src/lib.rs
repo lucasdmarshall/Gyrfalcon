@@ -30,6 +30,7 @@ mod tier;
 mod tombstone;
 mod vector;
 mod wal;
+mod warm;
 mod wordpiece;
 
 pub use answer::{

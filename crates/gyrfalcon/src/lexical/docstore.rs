@@ -147,6 +147,11 @@ impl DocStore {
         self.num_docs
     }
 
+    /// Faults the stored fields. A query reads only the blocks it returns; open reads them all.
+    pub(crate) fn warm(&self) {
+        crate::warm::warm_map(&self.map);
+    }
+
     fn entry(&self, block: usize) -> BlockEntry {
         let at = HEADER + block * INDEX_ENTRY;
         let bytes = &self.map[at..at + INDEX_ENTRY];

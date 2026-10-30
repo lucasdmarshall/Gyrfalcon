@@ -186,6 +186,14 @@ impl LexicalSegment {
         Ok(segment)
     }
 
+    /// Faults the dictionary, postings, norms, and stored fields in that order.
+    pub(crate) fn warm(&self) {
+        crate::warm::warm_map(&self.dict);
+        crate::warm::warm_map(&self.postings);
+        crate::warm::warm_map(&self.norms);
+        self.docs.warm();
+    }
+
     /// Checks the dictionary once so lookups can index it without further checks.
     fn validate(&self, blob_len: usize) -> Result<()> {
         let mut previous_end = 0;
