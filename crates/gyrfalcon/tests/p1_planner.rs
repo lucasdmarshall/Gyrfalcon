@@ -29,6 +29,12 @@ fn replay_rebuilds_each_policy() {
     assert!(cost >= 1.0 + 2.0 + 20.0);
     assert_eq!(score(&t, Policy::Rescore { dense_weight: 0.2, rerank_k: 2 }).mrr_at_10, 1.0);
     assert_eq!(score(&t, Policy::Lexical).mrr_at_10, 0.5);
+    // BM25 / 9 plus cosine at dense weight 0.9: c 0.821, b 0.596, a 0.190.
+    assert_eq!(replay(&t, Policy::RescoreMax { dense_weight: 0.9, rerank_k: 0 }, 10).0, vec!["c", "b", "a"]);
+    // Rerank the top 2 of that order: b (5.0) before c (1.0); a stays third.
+    let (ranked, cost) = replay(&t, Policy::RescoreMax { dense_weight: 0.9, rerank_k: 2 }, 10);
+    assert_eq!(ranked, vec!["b", "c", "a"]);
+    assert!(cost >= 20.0);
 }
 
 #[test]
@@ -40,6 +46,7 @@ fn replay_drops_the_query_id_like_beir() {
 
 #[test]
 fn policies_parse() {
+    assert_eq!(Policy::parse("rescoremax:0.45:8"), Some(Policy::RescoreMax { dense_weight: 0.45, rerank_k: 8 }));
     assert_eq!(Policy::parse("rescore:0.3:16"), Some(Policy::Rescore { dense_weight: 0.3, rerank_k: 16 }));
     assert_eq!(Policy::parse("rescore:0.3"), Some(Policy::Rescore { dense_weight: 0.3, rerank_k: 0 }));
     assert_eq!(Policy::parse("lexical"), Some(Policy::Lexical));
@@ -88,4 +95,15 @@ fn live_trace_replays_to_the_live_ranking() {
         assert!(!trace.rerank.is_empty());
         assert!(trace.features.query_tokens == 2 && trace.features.idf_max > 0.0);
     }
+    index.fusion = gyrfalcon::Fusion::RescoreMax { dense_weight: 0.45 };
+    let mut trace = index.trace_query("word3 shared", 100, Some((&reranker, 8))).unwrap();
+    trace.query_id = "none".into();
+    let live: Vec<String> = index
+        .retrieve("word3 shared", RetrieveOptions { rerank: false, limit: 100 })
+        .unwrap()
+        .hits
+        .into_iter()
+        .map(|h| h.doc_id)
+        .collect();
+    assert_eq!(replay(&trace, Policy::RescoreMax { dense_weight: 0.45, rerank_k: 0 }, 100).0, live);
 }
