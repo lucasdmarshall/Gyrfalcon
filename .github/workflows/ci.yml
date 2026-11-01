@@ -22,6 +22,20 @@ jobs:
       # Tests that need models or datasets skip themselves when their variables are unset.
       - run: cargo test --release
 
+  # Release wheels are built for Windows and macOS too; build and test the engine there so
+  # platform-only APIs fail here instead of at a release tag.
+  rust-other-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release --workspace --exclude gyrfalcon-py
+
   python:
     runs-on: ubuntu-latest
     steps:

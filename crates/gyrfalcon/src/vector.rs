@@ -661,6 +661,7 @@ impl VectorSegment {
         crate::warm::warm_map(&self.vectors);
         // The rows a query rescores are scattered. After they are resident, later faults
         // (a collection that no longer fits) should not pull the neighbors in again.
+        #[cfg(unix)]
         let _ = self.vectors.advise(memmap2::Advice::Random);
     }
 

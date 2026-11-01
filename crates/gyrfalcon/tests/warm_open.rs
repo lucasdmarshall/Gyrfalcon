@@ -1,5 +1,7 @@
 //! `Index::open` prefetches mapped search files on a background thread. `Warmup::Eager` finishes
 //! that read before it returns, which is what the residency checks below pin down.
+#![cfg(target_os = "linux")]
+// mincore, posix_fadvise and the Linux constants below exist only on Linux.
 
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
