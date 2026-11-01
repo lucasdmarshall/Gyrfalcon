@@ -311,6 +311,7 @@ impl StaticEmbedder {
     pub fn warm(&self) {
         if let Table::Mapped { map, .. } = &self.table {
             crate::warm::warm_map(map);
+            #[cfg(unix)]
             let _ = map.advise(memmap2::Advice::Random);
         }
     }

@@ -71,8 +71,11 @@ pub fn warm_file(path: &Path) -> std::io::Result<()> {
 
 /// Faults every page of `map` in order. Sequential faults let the kernel readahead.
 pub fn warm_map(map: &memmap2::Mmap) {
-    let _ = map.advise(memmap2::Advice::Sequential);
-    let _ = map.advise(memmap2::Advice::WillNeed);
+    #[cfg(unix)]
+    {
+        let _ = map.advise(memmap2::Advice::Sequential);
+        let _ = map.advise(memmap2::Advice::WillNeed);
+    }
     warm_bytes(map);
 }
 
@@ -90,14 +93,19 @@ pub fn warm_bytes(bytes: &[u8]) {
 /// queue empty.
 const READ_QUEUE: usize = 32;
 
+#[cfg(unix)]
 extern "C" {
     fn mincore(addr: *mut std::ffi::c_void, length: usize, vec: *mut u8) -> i32;
-    /// Linux `_SC_PAGESIZE`.
     fn sysconf(name: i32) -> i64;
 }
 
+/// `_SC_PAGESIZE`, which differs between Linux and the BSDs.
+#[cfg(unix)]
+const SC_PAGESIZE: i32 = if cfg!(any(target_os = "linux", target_os = "android")) { 30 } else { 29 };
+
+#[cfg(unix)]
 fn page_size() -> usize {
-    let size = unsafe { sysconf(30) };
+    let size = unsafe { sysconf(SC_PAGESIZE) };
     if size > 0 {
         size as usize
     } else {
@@ -107,6 +115,7 @@ fn page_size() -> usize {
 
 /// `true` when every byte of `ranges` (offset, length) is in the page cache. An empty list is
 /// resident. `mincore` failing counts as not resident, so the caller reads the bytes itself.
+#[cfg(unix)]
 pub fn ranges_resident(map: &memmap2::Mmap, ranges: &[(usize, usize)]) -> bool {
     if ranges.is_empty() {
         return true;
@@ -127,6 +136,14 @@ pub fn ranges_resident(map: &memmap2::Mmap, ranges: &[(usize, usize)]) -> bool {
     })
 }
 
+/// Without `mincore` there is no cheap residency check, so every range counts as resident and
+/// queries keep the mapped path, as they did before exact-row reads existed.
+#[cfg(not(unix))]
+pub fn ranges_resident(_map: &memmap2::Mmap, _ranges: &[(usize, usize)]) -> bool {
+    true
+}
+
+#[cfg(unix)]
 fn resident_pages(map: &memmap2::Mmap) -> Option<Vec<u8>> {
     if map.is_empty() {
         return Some(Vec::new());
@@ -140,7 +157,6 @@ fn resident_pages(map: &memmap2::Mmap) -> Option<Vec<u8>> {
 /// Reads `(offset, length)` pairs from `file`. Separate threads issue the reads so a cold
 /// disk can queue them; each buffer is exactly the requested bytes, with no neighbor pages.
 pub fn read_ranges(file: &std::fs::File, ranges: &[(u64, usize)]) -> std::io::Result<Vec<Vec<u8>>> {
-    use std::os::unix::fs::FileExt;
     let mut buffers: Vec<Vec<u8>> = ranges.iter().map(|(_, len)| vec![0u8; *len]).collect();
     if ranges.is_empty() {
         return Ok(buffers);
@@ -152,7 +168,7 @@ pub fn read_ranges(file: &std::fs::File, ranges: &[(u64, usize)]) -> std::io::Re
         for (group, bufs) in ranges.chunks(chunk).zip(buffers.chunks_mut(chunk)) {
             guards.push(scope.spawn(move || -> std::io::Result<()> {
                 for ((offset, _), buf) in group.iter().zip(bufs.iter_mut()) {
-                    file.read_exact_at(buf, *offset)?;
+                    read_exact_at(file, buf, *offset)?;
                 }
                 Ok(())
             }));
@@ -166,6 +182,28 @@ pub fn read_ranges(file: &std::fs::File, ranges: &[(u64, usize)]) -> std::io::Re
         Ok(())
     })?;
     Ok(buffers)
+}
+
+#[cfg(unix)]
+fn read_exact_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, buf, offset)
+}
+
+#[cfg(windows)]
+fn read_exact_at(file: &std::fs::File, mut buf: &mut [u8], mut offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    while !buf.is_empty() {
+        match file.seek_read(buf, offset) {
+            Ok(0) => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            Ok(n) => {
+                buf = &mut buf[n..];
+                offset += n as u64;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

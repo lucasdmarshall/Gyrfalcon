@@ -111,8 +111,11 @@ fn bench_ram_fills_the_byte_counts() {
     assert_eq!(report["vectors_bin_bytes"], 2000 * 384);
     assert!(report["codes_bytes"].as_u64().unwrap() > 0);
     assert!(report["lexical_bytes"].as_u64().unwrap() > 0);
-    assert!(report["rss_model_loaded"].as_u64().unwrap() > 0);
-    assert!(report["rss_index_open"].as_u64().unwrap() >= report["rss_baseline"].as_u64().unwrap());
+    // RSS is read from /proc/self/status, so it is only measured on Linux.
+    if cfg!(target_os = "linux") {
+        assert!(report["rss_model_loaded"].as_u64().unwrap() > 0);
+        assert!(report["rss_index_open"].as_u64().unwrap() >= report["rss_baseline"].as_u64().unwrap());
+    }
     assert_eq!(report["tombstone_count"], 0);
 }
 
