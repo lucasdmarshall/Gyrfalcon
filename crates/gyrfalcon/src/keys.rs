@@ -133,6 +133,8 @@ mod tests {
         assert_eq!(keys.chunks_for("မြန်မာ"), vec![4]);
         assert!(keys.chunks_for("c").is_empty());
         assert!(keys.chunks_for("a\0").is_empty());
+        // Windows refuses to rewrite a file while a mapping of it is open.
+        drop(keys);
 
         let bytes = std::fs::read(&path).unwrap();
         for cut in [0, 8, 15, bytes.len() - 1] {
