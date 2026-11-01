@@ -262,7 +262,8 @@ fn sync_tree(dir: &Path) -> Result<()> {
         if entry.file_type()?.is_dir() {
             sync_tree(&entry.path())?;
         } else {
-            std::fs::File::open(entry.path())?.sync_all()?;
+            // Windows flushes only through a handle opened for writing.
+            std::fs::OpenOptions::new().read(true).write(cfg!(windows)).open(entry.path())?.sync_all()?;
         }
     }
     store::sync_dir(dir)
