@@ -16,7 +16,7 @@ No server, no vector database, no GPU, and a default tier that needs no model ru
 [![License](https://img.shields.io/badge/license-Apache_2.0-111418?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-111418?style=flat-square&logo=rust&logoColor=white)](docs/reference/rust-api.md)
 [![Python](https://img.shields.io/badge/python-3.9%2B-111418?style=flat-square&logo=python&logoColor=white)](docs/reference/python-api.md)
-[![Status](https://img.shields.io/badge/status-0.1_pre--release-6e7681?style=flat-square)](#roadmap)
+[![Status](https://img.shields.io/badge/status-0.1.0-6e7681?style=flat-square)](#roadmap)
 
 [**Quickstart**](#quickstart) · [**Benchmarks**](#benchmarks) · [**How it works**](#how-it-works) · [**Documentation**](docs/README.md) · [**Design records**](docs/README.md#design-records)
 
@@ -297,7 +297,7 @@ Start with `lite`; moving to `full` is one argument and a rebuild.
 - [x] Python package, command line, HTTP server
 - [x] PDF and HTML ingestion, metadata filters
 - [x] Held-out evaluation and run-to-run variance
-- [ ] First release on PyPI and crates.io
+- [x] First release on PyPI and crates.io (0.1.0)
 - [ ] Pruned BM25 and partitioned dense search for collections past a million chunks
 - [ ] Adaptive per-query planning ([design](docs/concepts/planner.md))
 - [ ] Corpus distillation for the lite tier ([v2 design](docs/v2-beta/corpus-distillation.md))
